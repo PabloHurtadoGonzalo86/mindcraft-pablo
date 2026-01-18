@@ -41,7 +41,7 @@ const settings = {
     "render_bot_view": false, // show bot's view in browser at localhost:3000, 3001...
 
     "allow_insecure_coding": true, // ENABLED: allows newAction for hybrid learning system
-    "allow_vision": true, // ENABLED: allows vision model for task verification
+    "allow_vision": false, // DISABLED: WebGL not available in headless Docker
     "blocked_actions" : ["!checkBlueprint", "!checkBlueprintLevel", "!getBlueprint", "!getBlueprintLevel"] , // commands to disable and remove from docs. Ex: ["!setMode"]
     "code_timeout_mins": 10, // 10 minutes timeout for generated code
     "relevant_docs_count": 5, // number of relevant code function docs to select for prompting. -1 for all
