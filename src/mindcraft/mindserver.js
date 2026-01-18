@@ -139,8 +139,8 @@ export function createMindServer(host_public = false, port = 8080) {
         });
 
         socket.on('chat-message', (agentName, json) => {
-            if (!agent_connections[agentName]) {
-                console.warn(`Agent ${agentName} tried to send a message but is not logged in`);
+            if (!agent_connections[agentName] || !agent_connections[agentName].socket) {
+                console.warn(`Agent ${agentName} is not connected, cannot deliver message from ${curAgentName}`);
                 return;
             }
             console.log(`${curAgentName} sending message to ${agentName}: ${json.message}`);
@@ -149,7 +149,7 @@ export function createMindServer(host_public = false, port = 8080) {
 
         socket.on('set-agent-settings', (agentName, settings) => {
             const agent = agent_connections[agentName];
-            if (agent) {
+            if (agent && agent.socket) {
                 agent.setSettings(settings);
                 agent.socket.emit('restart-agent');
             }
@@ -157,7 +157,11 @@ export function createMindServer(host_public = false, port = 8080) {
 
         socket.on('restart-agent', (agentName) => {
             console.log(`Restarting agent: ${agentName}`);
-            agent_connections[agentName].socket.emit('restart-agent');
+            if (agent_connections[agentName] && agent_connections[agentName].socket) {
+                agent_connections[agentName].socket.emit('restart-agent');
+            } else {
+                console.warn(`Cannot restart agent ${agentName}: not connected`);
+            }
         });
 
         socket.on('stop-agent', (agentName) => {
@@ -197,8 +201,8 @@ export function createMindServer(host_public = false, port = 8080) {
         });
 
 		socket.on('send-message', (agentName, data) => {
-			if (!agent_connections[agentName]) {
-				console.warn(`Agent ${agentName} not in game, cannot send message via MindServer.`);
+			if (!agent_connections[agentName] || !agent_connections[agentName].socket) {
+				console.warn(`Agent ${agentName} not connected, cannot send message via MindServer.`);
 				return
 			}
 			try {
@@ -251,7 +255,7 @@ function addListener(listener_socket) {
             const states = {};
             for (let agentName in agent_connections) {
                 let agent = agent_connections[agentName];
-                if (agent.in_game) {
+                if (agent.in_game && agent.socket) {
                     try {
                         const state = await new Promise((resolve) => {
                             agent.socket.emit('get-full-state', (s) => resolve(s));
