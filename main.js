@@ -38,8 +38,10 @@ if (args.task_path) {
 }
 
 // these environment variables override certain settings
-if (process.env.MINECRAFT_PORT) {
-    settings.port = process.env.MINECRAFT_PORT;
+// Note: Skip MINECRAFT_PORT as Kubernetes auto-generates it with format tcp://IP:PORT
+// which causes connection issues. Use settings.js for port configuration instead.
+if (process.env.MINECRAFT_PORT && !process.env.MINECRAFT_PORT.includes('://')) {
+    settings.port = parseInt(process.env.MINECRAFT_PORT, 10);
 }
 if (process.env.MINDSERVER_PORT) {
     settings.mindserver_port = process.env.MINDSERVER_PORT;
