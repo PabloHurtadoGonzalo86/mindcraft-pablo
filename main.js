@@ -67,8 +67,26 @@ if (process.env.LOG_ALL) {
 
 Mindcraft.init(true, settings.mindserver_port, settings.auto_open_ui);
 
-for (let profile of settings.profiles) {
-    const profile_json = JSON.parse(readFileSync(profile, 'utf8'));
-    settings.profile = profile_json;
-    Mindcraft.createAgent(settings);
+// Staggered bot connections to avoid server throttling
+// Paper/Fabric servers throttle rapid connections - need 15+ second delays
+const connectionDelay = settings.bot_connection_delay || 15000; // Default 15 seconds
+
+async function startAgentsWithDelay() {
+    for (let i = 0; i < settings.profiles.length; i++) {
+        const profile = settings.profiles[i];
+        const profile_json = JSON.parse(readFileSync(profile, 'utf8'));
+        settings.profile = profile_json;
+
+        console.log(`[Startup] Starting bot ${i + 1}/${settings.profiles.length}: ${profile_json.name}`);
+        Mindcraft.createAgent(settings);
+
+        // Add delay between bot connections (except after the last one)
+        if (i < settings.profiles.length - 1) {
+            console.log(`[Startup] Waiting ${connectionDelay / 1000}s before next bot...`);
+            await new Promise(resolve => setTimeout(resolve, connectionDelay));
+        }
+    }
+    console.log(`[Startup] All ${settings.profiles.length} bots started.`);
 }
+
+startAgentsWithDelay();
