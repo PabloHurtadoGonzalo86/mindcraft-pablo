@@ -18,6 +18,7 @@ import { Task } from './tasks/tasks.js';
 import { speak } from './speak.js';
 import { log, validateNameFormat, handleDisconnection } from './connection_handler.js';
 import PersistentMemorySystem from '../memory/index.js';
+import { integrateHybridSystem } from '../hybrid/integration.js';
 
 export class Agent {
     async start(load_mem=false, init_message=null, count_id=0) {
@@ -156,6 +157,24 @@ export class Agent {
 
                 await new Promise((resolve) => setTimeout(resolve, 10000));
                 this.checkAllPlayersPresent();
+
+                // Initialize Hybrid Learning System (Voyager-style)
+                if (settings.allow_insecure_coding) {
+                    try {
+                        integrateHybridSystem(this, {
+                            defaultMode: 'hybrid',
+                            autonomousDelay: 60000, // 1 minute without players → autonomous
+                            useVision: settings.allow_vision,
+                            useLLMVerification: true,
+                            maxRetries: 3,
+                            taskTimeoutMs: 5 * 60 * 1000, // 5 minutes per task
+                            botNames: [this.name]
+                        });
+                        console.log(`[HybridSystem] Integrated successfully for ${this.name}`);
+                    } catch (hybridError) {
+                        console.error('[HybridSystem] Failed to initialize:', hybridError.message);
+                    }
+                }
 
             } catch (error) {
                 console.error('Error in spawn event:', error);
