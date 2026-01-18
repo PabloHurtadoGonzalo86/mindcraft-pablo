@@ -1,7 +1,7 @@
 const settings = {
     "minecraft_version": "1.21.1", // Matching server version
-    "host": "127.0.0.1", // localhost for Kubernetes NodePort
-    "port": 30566, // NodePort for Minecraft server in K8s
+    "host": "minecraft", // Kubernetes internal service name
+    "port": 25565, // Internal Minecraft port (not NodePort)
     "auth": "offline", // server is in offline mode
 
     // the mindserver manages all agents and hosts the UI
