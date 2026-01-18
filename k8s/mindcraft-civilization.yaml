@@ -60,11 +60,11 @@ spec:
               optional: true
         resources:
           requests:
-            cpu: "1"
-            memory: 2Gi
+            cpu: "1500m"
+            memory: 3Gi
           limits:
-            cpu: "3"
-            memory: 4Gi
+            cpu: "4"
+            memory: 6Gi
         volumeMounts:
         # Mount each bot's memory directory separately (not /app/bots which contains profiles)
         - name: bot-memories
