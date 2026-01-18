@@ -5,6 +5,17 @@
 
 import { createClient } from 'redis';
 
+// Safe JSON parse helper
+function safeJsonParse(data, fallback = null) {
+    if (!data) return fallback;
+    try {
+        return JSON.parse(data);
+    } catch (e) {
+        console.warn('[WorkingMemory] JSON parse error:', e.message);
+        return fallback;
+    }
+}
+
 export class WorkingMemory {
     constructor(config = {}) {
         this.redisHost = config.redisHost || process.env.REDIS_HOST || 'redis-master.minecraft-ai.svc.cluster.local';
@@ -80,7 +91,7 @@ export class WorkingMemory {
         if (!this.connected) await this.connect();
 
         const data = await this.client.get(`${this.prefix}goal:current`);
-        return data ? JSON.parse(data) : null;
+        return safeJsonParse(data);
     }
 
     async clearGoal() {
@@ -110,7 +121,7 @@ export class WorkingMemory {
         if (!this.connected) await this.connect();
 
         const data = await this.client.get(`${this.prefix}attention`);
-        return data ? JSON.parse(data) : null;
+        return safeJsonParse(data);
     }
 
     // ==================== Message Buffer ====================
@@ -146,7 +157,7 @@ export class WorkingMemory {
             count - 1
         );
 
-        return messages.map(m => JSON.parse(m));
+        return messages.map(m => safeJsonParse(m, {})).filter(m => m !== null);
     }
 
     // ==================== Player Context ====================
@@ -170,7 +181,7 @@ export class WorkingMemory {
         if (!this.connected) await this.connect();
 
         const data = await this.client.get(`${this.prefix}player:${playerName}`);
-        return data ? JSON.parse(data) : null;
+        return safeJsonParse(data);
     }
 
     async getAllPlayerContexts() {
@@ -183,7 +194,8 @@ export class WorkingMemory {
             const playerName = key.replace(`${this.prefix}player:`, '');
             const data = await this.client.get(key);
             if (data) {
-                contexts[playerName] = JSON.parse(data);
+                const parsed = safeJsonParse(data);
+                if (parsed) contexts[playerName] = parsed;
             }
         }
 
@@ -211,7 +223,7 @@ export class WorkingMemory {
         if (!this.connected) await this.connect();
 
         const data = await this.client.get(`${this.prefix}gameState`);
-        return data ? JSON.parse(data) : null;
+        return safeJsonParse(data);
     }
 
     // ==================== Context Summary ====================

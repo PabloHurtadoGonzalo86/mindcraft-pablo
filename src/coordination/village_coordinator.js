@@ -254,8 +254,16 @@ export class VillageCoordinator {
     async getOnlineBots() {
         if (!this.initialized) return [];
 
-        const bots = await this.redisClient.hGetAll('village:bots');
-        return Object.values(bots).map(b => JSON.parse(b));
+        try {
+            const bots = await this.redisClient.hGetAll('village:bots');
+            return Object.values(bots).map(b => {
+                try { return JSON.parse(b); }
+                catch { return null; }
+            }).filter(b => b !== null);
+        } catch (e) {
+            console.error('[VillageCoordinator] Failed to get online bots:', e.message);
+            return [];
+        }
     }
 
     /**
@@ -298,14 +306,22 @@ export class VillageCoordinator {
     async getPendingTasks() {
         if (!this.initialized) return [];
 
-        const tasks = await this.redisClient.lRange('village:task_queue', 0, -1);
-        return tasks
-            .map(t => JSON.parse(t))
-            .filter(t =>
-                t.assignedTo === this.agentName ||
-                t.assignedTo === this.role.key ||
-                t.assignedTo === 'ALL'
-            );
+        try {
+            const tasks = await this.redisClient.lRange('village:task_queue', 0, -1);
+            return tasks
+                .map(t => {
+                    try { return JSON.parse(t); }
+                    catch { return null; }
+                })
+                .filter(t => t !== null &&
+                    (t.assignedTo === this.agentName ||
+                     t.assignedTo === this.role.key ||
+                     t.assignedTo === 'ALL')
+                );
+        } catch (e) {
+            console.error('[VillageCoordinator] Failed to get pending tasks:', e.message);
+            return [];
+        }
     }
 
     async shutdown() {

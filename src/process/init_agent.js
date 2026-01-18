@@ -2,6 +2,19 @@ import { Agent } from '../agent/agent.js';
 import { serverProxy } from '../agent/mindserver_proxy.js';
 import yargs from 'yargs';
 
+// Global error handlers to prevent unexpected crashes
+process.on('uncaughtException', (error) => {
+    console.error('[CRITICAL] Uncaught Exception:', error.message);
+    console.error(error.stack);
+    // Don't exit immediately - give time to log
+    setTimeout(() => process.exit(1), 1000);
+});
+
+process.on('unhandledRejection', (reason, promise) => {
+    console.error('[CRITICAL] Unhandled Promise Rejection:', reason);
+    // Log but don't crash for promise rejections - they're often recoverable
+});
+
 const args = process.argv.slice(2);
 if (args.length < 1) {
     console.log('Usage: node init_agent.js -n <agent_name> -p <port> -l <load_memory> -m <init_message> -c <count_id>');

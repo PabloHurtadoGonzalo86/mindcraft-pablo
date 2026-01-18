@@ -191,7 +191,7 @@ export class Agent {
 
             } catch (error) {
                 console.error('Error in spawn event:', error);
-                process.exit(0);
+                process.exit(1);
             }
         });
     }

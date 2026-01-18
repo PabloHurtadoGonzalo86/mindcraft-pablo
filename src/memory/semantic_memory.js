@@ -117,7 +117,7 @@ export class SemanticMemory {
             successCount: 0,
             failCount: 0,
             lastUsed: null,
-            learnedAt: new Date()
+            updatedAt: new Date()
         };
 
         try {

@@ -50,11 +50,18 @@ export class History {
         }
         try {
             const data = readFileSync(this.full_history_fp, 'utf8');
-            let full_history = JSON.parse(data);
+            let full_history = [];
+            try {
+                full_history = JSON.parse(data);
+                if (!Array.isArray(full_history)) full_history = [];
+            } catch (parseErr) {
+                console.warn(`History file corrupted, starting new: ${parseErr.message}`);
+                full_history = [];
+            }
             full_history.push(...to_store);
             writeFileSync(this.full_history_fp, JSON.stringify(full_history, null, 4), 'utf8');
         } catch (err) {
-            console.error(`Error reading ${this.name}'s full history file: ${err.message}`);
+            console.error(`Error with ${this.name}'s full history file: ${err.message}`);
         }
     }
 
@@ -84,16 +91,15 @@ export class History {
             const data = {
                 memory: this.memory,
                 turns: this.turns,
-                self_prompting_state: this.agent.self_prompter.state,
-                self_prompt: this.agent.self_prompter.isStopped() ? null : this.agent.self_prompter.prompt,
-                taskStart: this.agent.task.taskStartTime,
+                self_prompting_state: this.agent.self_prompter?.state,
+                self_prompt: this.agent.self_prompter?.isStopped() ? null : this.agent.self_prompter?.prompt,
+                taskStart: this.agent.task?.taskStartTime,
                 last_sender: this.agent.last_sender
             };
             writeFileSync(this.memory_fp, JSON.stringify(data, null, 2));
             console.log('Saved memory to:', this.memory_fp);
         } catch (error) {
-            console.error('Failed to save history:', error);
-            throw error;
+            console.error('Failed to save history:', error.message);
         }
     }
 
@@ -103,14 +109,22 @@ export class History {
                 console.log('No memory file found.');
                 return null;
             }
-            const data = JSON.parse(readFileSync(this.memory_fp, 'utf8'));
+            const fileContent = readFileSync(this.memory_fp, 'utf8');
+            if (!fileContent || fileContent.trim() === '') {
+                console.warn('Memory file is empty, starting fresh.');
+                return null;
+            }
+            const data = JSON.parse(fileContent);
             this.memory = data.memory || '';
             this.turns = data.turns || [];
             console.log('Loaded memory:', this.memory);
             return data;
         } catch (error) {
-            console.error('Failed to load history:', error);
-            throw error;
+            console.error('Failed to load history (corrupted file?):', error.message);
+            console.warn('Starting with fresh memory due to load error.');
+            this.memory = '';
+            this.turns = [];
+            return null;
         }
     }
 

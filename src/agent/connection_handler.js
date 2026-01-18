@@ -72,13 +72,19 @@ export function parseKickReason(reason) {
 // Centralized handler for disconnections.
 export function handleDisconnection(agentName, reason) {
     const { type, msg } = parseKickReason(reason);
-    
+
     // Format: [LoginGuard] Error Message
     const finalMsg = `[LoginGuard] ${msg}`;
-    
+
+    // Log detailed information for debugging
+    console.error(`[DISCONNECT] Agent: ${agentName}`);
+    console.error(`[DISCONNECT] Type: ${type}`);
+    console.error(`[DISCONNECT] Raw reason:`, reason);
+    console.error(`[DISCONNECT] Timestamp: ${new Date().toISOString()}`);
+
     // Only call log once (it handles console printing)
     log(agentName, finalMsg);
-    
+
     return { type, msg: finalMsg };
 }
 
