@@ -1,0 +1,85 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: mindcraft-config
+  namespace: minecraft-ai
+data:
+  QDRANT_HOST: "qdrant"
+  QDRANT_PORT: "6333"
+  REDIS_HOST: "redis-master"
+  REDIS_PORT: "6379"
+  MONGO_HOST: "mongodb"
+  MONGO_PORT: "27017"
+  MONGO_USER: "mindcraft"
+  # Override settings.js for internal K8s connection
+  SETTINGS_JSON: '{"host": "10.111.161.165", "port": 25565}'
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: mindcraft-secrets
+  namespace: minecraft-ai
+type: Opaque
+stringData:
+  MONGO_PASSWORD: "mindcraft_user_2026"
+  GEMINI_API_KEY: "AIzaSyBJroTxr2iN8yXbx_jhPomgKrMGSmTZLwU"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mindcraft-andy
+  namespace: minecraft-ai
+  labels:
+    app: mindcraft-andy
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: mindcraft-andy
+  template:
+    metadata:
+      labels:
+        app: mindcraft-andy
+    spec:
+      containers:
+      - name: mindcraft-andy
+        image: ocholoko888/mindcraft-andy:latest
+        imagePullPolicy: Always
+        env:
+        # Override K8s auto-generated MINECRAFT_* vars to avoid conflict
+        - name: MINECRAFT_PORT
+          value: "25565"
+        - name: MINECRAFT_HOST
+          value: "10.111.161.165"
+        envFrom:
+        - configMapRef:
+            name: mindcraft-config
+        - secretRef:
+            name: mindcraft-secrets
+        resources:
+          requests:
+            memory: "512Mi"
+            cpu: "250m"
+          limits:
+            memory: "1Gi"
+            cpu: "1000m"
+        volumeMounts:
+        - name: bot-memory
+          mountPath: /app/bots/Andy
+      volumes:
+      - name: bot-memory
+        persistentVolumeClaim:
+          claimName: mindcraft-andy-pvc
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: mindcraft-andy-pvc
+  namespace: minecraft-ai
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: longhorn
+  resources:
+    requests:
+      storage: 1Gi

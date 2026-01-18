@@ -1,14 +1,14 @@
 const settings = {
-    "minecraft_version": "auto", // or specific version like "1.21.6"
-    "host": "127.0.0.1", // or "localhost", "your.ip.address.here"
-    "port": 55916, // set to -1 to automatically scan for open ports
-    "auth": "offline", // or "microsoft"
+    "minecraft_version": "1.21.1", // Matching server version
+    "host": "127.0.0.1", // localhost for Kubernetes NodePort
+    "port": 30566, // NodePort for Minecraft server in K8s
+    "auth": "offline", // server is in offline mode
 
     // the mindserver manages all agents and hosts the UI
     "mindserver_port": 8080,
-    "auto_open_ui": true, // opens UI in browser on startup
-    
-    "base_profile": "assistant", // survival, assistant, creative, or god_mode
+    "auto_open_ui": false, // disabled for server environment
+
+    "base_profile": "survival", // survival mode for autonomous agent
     "profiles": [
         "./andy.json",
         // "./profiles/gpt.json",
@@ -26,8 +26,8 @@ const settings = {
         // individual profiles override values from the base profile
     ],
 
-    "load_memory": false, // load memory from previous session
-    "init_message": "Respond with hello world and your name", // sends to all on spawn
+    "load_memory": true, // enable memory persistence
+    "init_message": "Hola! Soy Andy, tu asistente de Minecraft. Escribe en el chat para hablar conmigo!", // sends to all on spawn
     "only_chat_with": [], // users that the bots listen to and send general messages to. if empty it will chat publicly
 
     "speak": false,

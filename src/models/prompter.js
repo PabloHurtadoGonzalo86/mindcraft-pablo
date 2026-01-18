@@ -165,6 +165,24 @@ export class Prompter {
             prompt = prompt.replaceAll('$EXAMPLES', await examples.createExampleMessage(messages));
         if (prompt.includes('$MEMORY'))
             prompt = prompt.replaceAll('$MEMORY', this.agent.history.memory);
+
+        // Integrate episodic memories from persistent memory system
+        if (prompt.includes('$EPISODIC_MEMORIES')) {
+            let episodicContext = '';
+            if (this.agent.persistentMemory?.initialized) {
+                try {
+                    // Get the most recent user message for context
+                    const recentMsg = messages?.slice().reverse().find(m => m.role === 'user')?.content || '';
+                    const memoryContext = await this.agent.persistentMemory.getPromptContext(recentMsg);
+                    episodicContext = memoryContext.episodicMemories || 'No relevant memories found.';
+                } catch (e) {
+                    console.error('Error fetching episodic memories:', e.message);
+                    episodicContext = 'Memory system temporarily unavailable.';
+                }
+            }
+            prompt = prompt.replaceAll('$EPISODIC_MEMORIES', episodicContext);
+        }
+
         if (prompt.includes('$TO_SUMMARIZE'))
             prompt = prompt.replaceAll('$TO_SUMMARIZE', stringifyTurns(to_summarize));
         if (prompt.includes('$CONVO'))

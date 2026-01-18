@@ -1,35 +1,39 @@
-FROM node:22-bookworm-slim
+# Mindcraft Bot with 4-Layer Memory System
+FROM node:20-slim
 
-ENV DEBIAN_FRONTEND=noninteractive
-
-RUN apt-get update && \
-    apt-get install -y --no-install-recommends \
-    # git \
-    # unzip \
+# Install dependencies for canvas and other native modules
+RUN apt-get update && apt-get install -y \
     python3 \
-    python3-pip \
-    # tmux \
-    xvfb \
-    xauth \
-    libgl1-mesa-dev \
-    libgles2-mesa-dev \
-    libosmesa6-dev \
-    build-essential \
+    make \
+    g++ \
     libcairo2-dev \
     libpango1.0-dev \
     libjpeg-dev \
     libgif-dev \
     librsvg2-dev \
-    libxi-dev \
-    libxinerama-dev \
-    libxrandr-dev \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
-COPY package*.json .
+# Copy package files first for caching
+COPY package*.json ./
+
+# Install dependencies
 RUN npm install
 
+# Copy application code
 COPY . .
 
-CMD ["npm", "start"]
+# Create bots directory for memory persistence
+RUN mkdir -p /app/bots/Andy
+
+# Environment variables (will be overridden by K8s)
+ENV QDRANT_HOST=qdrant
+ENV QDRANT_PORT=6333
+ENV REDIS_HOST=redis-master
+ENV REDIS_PORT=6379
+ENV MONGO_HOST=mongodb
+ENV MONGO_PORT=27017
+
+# Start the bot
+CMD ["node", "main.js"]

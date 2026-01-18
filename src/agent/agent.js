@@ -17,6 +17,7 @@ import settings from './settings.js';
 import { Task } from './tasks/tasks.js';
 import { speak } from './speak.js';
 import { log, validateNameFormat, handleDisconnection } from './connection_handler.js';
+import PersistentMemorySystem from '../memory/index.js';
 
 export class Agent {
     async start(load_mem=false, init_message=null, count_id=0) {
@@ -46,6 +47,25 @@ export class Agent {
         this.self_prompter = new SelfPrompter(this);
         convoManager.initAgent(this);
         await this.prompter.initExamples();
+
+        // Initialize 4-Layer Persistent Memory System
+        this.persistentMemory = new PersistentMemorySystem({
+            agentName: this.name,
+            // Episodic + Procedural Memory (Qdrant)
+            qdrantHost: process.env.QDRANT_HOST || 'qdrant.minecraft-ai.svc.cluster.local',
+            qdrantPort: process.env.QDRANT_PORT || 6333,
+            // Working Memory (Redis)
+            redisHost: process.env.REDIS_HOST || 'redis-master.minecraft-ai.svc.cluster.local',
+            redisPort: process.env.REDIS_PORT || 6379,
+            // Semantic Memory (MongoDB)
+            mongoHost: process.env.MONGO_HOST || 'mongodb.minecraft-ai.svc.cluster.local',
+            mongoPort: process.env.MONGO_PORT || 27017,
+            mongoUser: process.env.MONGO_USER || 'mindcraft',
+            mongoPassword: process.env.MONGO_PASSWORD || 'mindcraft_user_2026',
+            // Embeddings
+            geminiApiKey: process.env.GEMINI_API_KEY
+        });
+        await this.persistentMemory.initialize();
 
         // load mem first before doing task
         let save_data = null;
@@ -312,6 +332,43 @@ export class Agent {
         await this.history.add(source, message);
         this.history.save();
 
+        // Store in persistent memory if from a player
+        if (!self_prompt && this.persistentMemory?.initialized) {
+            await this.persistentMemory.addMessage(source, message, 'chat');
+
+            // Update player context in Working Memory
+            const player = this.bot.players[source];
+            if (player) {
+                await this.persistentMemory.updateContext({
+                    playerName: source,
+                    playerContext: {
+                        lastMessage: message,
+                        position: player.entity?.position ? {
+                            x: Math.floor(player.entity.position.x),
+                            y: Math.floor(player.entity.position.y),
+                            z: Math.floor(player.entity.position.z)
+                        } : null,
+                        gameMode: player.gamemode
+                    }
+                });
+
+                // Set attention to this player
+                await this.persistentMemory.updateContext({
+                    attention: source,
+                    attentionType: 'entity'
+                });
+
+                // Update player relationship in Semantic Memory
+                if (this.persistentMemory?.semantic) {
+                    await this.persistentMemory.semantic.updatePlayerRelation(source, {
+                        trust: 5, // neutral default, will be modified based on interactions
+                        notes: `Last message: ${message.substring(0, 100)}`,
+                        tags: ['player']
+                    });
+                }
+            }
+        }
+
         if (!self_prompt && this.self_prompter.isActive()) // message is from user during self-prompting
             max_responses = 1; // force only respond to this message, then let self-prompting take over
         for (let i=0; i<max_responses; i++) {
@@ -363,6 +420,27 @@ export class Agent {
 
                 console.log('Agent executed:', command_name, 'and got:', execute_res);
                 used_command = true;
+
+                // Store action result as episodic memory (autonomous)
+                if (execute_res && this.persistentMemory?.initialized) {
+                    const actionMemory = `I executed ${command_name}: ${execute_res}`;
+                    const importance = this._calculateActionImportance(command_name, execute_res);
+
+                    // Only store significant actions (importance >= 5)
+                    if (importance >= 5) {
+                        const pos = this.bot.entity?.position;
+                        await this.persistentMemory.remember(actionMemory, {
+                            type: 'action',
+                            importance: importance,
+                            location: pos ? { x: Math.floor(pos.x), y: Math.floor(pos.y), z: Math.floor(pos.z) } : null,
+                            gameTime: this.bot.time?.timeOfDay
+                        });
+                        console.log(`[Memory] Stored action: ${actionMemory.substring(0, 50)}...`);
+                    }
+
+                    // SEMANTIC LEARNING: Learn from successful actions
+                    await this._learnFromAction(command_name, res, execute_res);
+                }
 
                 if (execute_res)
                     this.history.add('system', execute_res);
@@ -441,16 +519,73 @@ export class Agent {
             this.bot.emit('midnight');
         });
 
+        // Autonomous time-based observations
+        this.bot.on('sunrise', async () => {
+            if (this.persistentMemory?.initialized && Math.random() < 0.3) { // 30% chance to record
+                const pos = this.bot.entity?.position;
+                const biome = this.bot.world?.getBiome?.(pos) || 'unknown';
+                await this.persistentMemory.remember(
+                    `A new day begins. I'm at ${Math.floor(pos?.x)}, ${Math.floor(pos?.y)}, ${Math.floor(pos?.z)} in ${biome}.`,
+                    { type: 'observation', importance: 3 }
+                );
+            }
+        });
+
+        this.bot.on('sunset', async () => {
+            if (this.persistentMemory?.initialized && Math.random() < 0.3) {
+                await this.persistentMemory.remember(
+                    `The sun is setting. I should find shelter or prepare for night.`,
+                    { type: 'observation', importance: 4 }
+                );
+            }
+        });
+
         let prev_health = this.bot.health;
         this.bot.lastDamageTime = 0;
         this.bot.lastDamageTaken = 0;
-        this.bot.on('health', () => {
+        this.bot.on('health', async () => {
             if (this.bot.health < prev_health) {
                 this.bot.lastDamageTime = Date.now();
                 this.bot.lastDamageTaken = prev_health - this.bot.health;
+
+                // Store significant damage as memory
+                if (this.persistentMemory?.initialized && this.bot.lastDamageTaken >= 4) {
+                    const pos = this.bot.entity?.position;
+                    await this.persistentMemory.remember(
+                        `I took ${this.bot.lastDamageTaken.toFixed(1)} damage! Health now: ${this.bot.health.toFixed(1)}/20`,
+                        {
+                            type: 'damage',
+                            importance: this.bot.health < 6 ? 8 : 5,
+                            location: pos ? { x: Math.floor(pos.x), y: Math.floor(pos.y), z: Math.floor(pos.z) } : null
+                        }
+                    );
+                }
             }
             prev_health = this.bot.health;
         });
+        // Track inventory for rare item discoveries
+        this._lastInventoryCheck = new Set();
+        this.bot.on('playerCollect', async (collector, collected) => {
+            if (collector.username !== this.bot.username) return;
+
+            // Check for rare items
+            const rareItems = ['diamond', 'emerald', 'ancient_debris', 'netherite', 'elytra', 'totem', 'enchanted_golden_apple'];
+            const itemName = collected.getDroppedItem?.()?.name || '';
+
+            if (this.persistentMemory?.initialized && rareItems.some(rare => itemName.includes(rare))) {
+                const pos = this.bot.entity?.position;
+                await this.persistentMemory.remember(
+                    `I found a rare item: ${itemName} at ${Math.floor(pos?.x)}, ${Math.floor(pos?.y)}, ${Math.floor(pos?.z)}!`,
+                    {
+                        type: 'discovery',
+                        importance: 9,
+                        location: pos ? { x: Math.floor(pos.x), y: Math.floor(pos.y), z: Math.floor(pos.z) } : null
+                    }
+                );
+                console.log(`[Memory] DISCOVERY: Found ${itemName}!`);
+            }
+        });
+
         // Logging callbacks
         this.bot.on('error' , (err) => {
             console.error('Error event!', err);
@@ -482,6 +617,19 @@ export class Agent {
                     death_pos_text = `x: ${death_pos.x.toFixed(2)}, y: ${death_pos.y.toFixed(2)}, z: ${death_pos.x.toFixed(2)}`;
                 }
                 let dimention = this.bot.game.dimension;
+
+                // Store death as important memory
+                if (this.persistentMemory?.initialized) {
+                    await this.persistentMemory.remember(
+                        `I died at ${death_pos_text} in ${dimention}. Death message: ${message}`,
+                        {
+                            type: 'death',
+                            importance: 9,
+                            location: death_pos ? { x: death_pos.x, y: death_pos.y, z: death_pos.z } : null
+                        }
+                    );
+                }
+
                 this.handleMessage('system', `You died at position ${death_pos_text || "unknown"} in the ${dimention} dimension with the final message: '${message}'. Your place of death is saved as 'last_death_position' if you want to return. Previous actions were stopped and you have respawned.`);
             }
         });
@@ -521,6 +669,128 @@ export class Agent {
         await this.bot.modes.update();
         this.self_prompter.update(delta);
         await this.checkTaskDone();
+
+        // Periodic autonomous world observation (every ~5 minutes on average)
+        if (this.persistentMemory?.initialized) {
+            this._observationTimer = (this._observationTimer || 0) + delta;
+
+            // ~5 minutes = 300000ms, check every update (300ms) with small probability
+            if (this._observationTimer > 300000 && Math.random() < 0.1) {
+                this._observationTimer = 0;
+                await this._recordWorldObservation();
+            }
+
+            // Update Working Memory with current state (every 30 seconds)
+            this._workingMemoryTimer = (this._workingMemoryTimer || 0) + delta;
+            if (this._workingMemoryTimer > 30000) {
+                this._workingMemoryTimer = 0;
+                await this._updateWorkingMemory();
+            }
+        }
+    }
+
+    /**
+     * Update Working Memory (Redis) with current bot state
+     */
+    async _updateWorkingMemory() {
+        if (!this.persistentMemory?.initialized) return;
+
+        try {
+            const pos = this.bot.entity?.position;
+            const health = this.bot.health;
+            const food = this.bot.food;
+            const gameTime = this.bot.time?.timeOfDay;
+
+            // Update game state
+            await this.persistentMemory.updateContext({
+                gameState: {
+                    position: pos ? { x: Math.floor(pos.x), y: Math.floor(pos.y), z: Math.floor(pos.z) } : null,
+                    health: health,
+                    food: food,
+                    gameTime: gameTime,
+                    dimension: this.bot.game?.dimension,
+                    isRaining: this.bot.isRaining,
+                    executing: this.actions.executing
+                }
+            });
+
+            // Update current goal from self_prompter
+            if (this.self_prompter.isActive() && this.self_prompter.prompt) {
+                await this.persistentMemory.updateContext({
+                    goal: this.self_prompter.prompt,
+                    goalPriority: 7
+                });
+            }
+
+            // Update attention based on current action target
+            if (this.actions.executing && this.bot.pathfinder?.goal) {
+                const goal = this.bot.pathfinder.goal;
+                await this.persistentMemory.updateContext({
+                    attention: `Moving to ${goal.x?.toFixed(0)}, ${goal.y?.toFixed(0)}, ${goal.z?.toFixed(0)}`,
+                    attentionType: 'location'
+                });
+            }
+
+            console.log('[WorkingMemory] State updated in Redis');
+        } catch (error) {
+            console.error('[WorkingMemory] Failed to update state:', error.message);
+        }
+    }
+
+    /**
+     * Record an autonomous observation about the current world state
+     */
+    async _recordWorldObservation() {
+        if (!this.persistentMemory?.initialized) return;
+
+        try {
+            const pos = this.bot.entity?.position;
+            if (!pos) return;
+
+            // Get nearby entities
+            const nearbyEntities = Object.values(this.bot.entities || {})
+                .filter(e => e.position?.distanceTo(pos) < 16 && e.type !== 'object')
+                .map(e => e.name || e.username || e.type)
+                .slice(0, 5);
+
+            // Get nearby blocks of interest
+            const interestingBlocks = [];
+            const blockTypes = ['diamond_ore', 'emerald_ore', 'ancient_debris', 'spawner', 'chest'];
+
+            for (const blockType of blockTypes) {
+                const block = this.bot.findBlock({
+                    matching: b => b?.name?.includes(blockType.split('_')[0]),
+                    maxDistance: 16
+                });
+                if (block) {
+                    interestingBlocks.push(block.name);
+                }
+            }
+
+            // Only store if something interesting
+            if (nearbyEntities.length > 0 || interestingBlocks.length > 0) {
+                let observation = `I'm at ${Math.floor(pos.x)}, ${Math.floor(pos.y)}, ${Math.floor(pos.z)}.`;
+
+                if (nearbyEntities.length > 0) {
+                    observation += ` Nearby: ${nearbyEntities.join(', ')}.`;
+                }
+
+                if (interestingBlocks.length > 0) {
+                    observation += ` Noticed: ${interestingBlocks.join(', ')}.`;
+                }
+
+                await this.persistentMemory.remember(observation, {
+                    type: 'observation',
+                    importance: interestingBlocks.length > 0 ? 7 : 4,
+                    location: { x: Math.floor(pos.x), y: Math.floor(pos.y), z: Math.floor(pos.z) },
+                    entities: nearbyEntities
+                });
+
+                console.log(`[Memory] Observation: ${observation.substring(0, 60)}...`);
+            }
+        } catch (e) {
+            // Silent fail for observations
+        }
     }
 
     isIdle() {
@@ -549,5 +819,162 @@ export class Agent {
 
     killAll() {
         serverProxy.shutdown();
+    }
+
+    /**
+     * Calculate importance score for an action result (for autonomous memory storage)
+     * High importance: rare items, significant achievements, failures
+     * Low importance: routine actions
+     */
+    _calculateActionImportance(commandName, result) {
+        let score = 4; // Base score
+
+        const resultLower = result.toLowerCase();
+
+        // High importance items/events
+        const highImportance = [
+            'diamond', 'emerald', 'ancient_debris', 'netherite',
+            'enchanted', 'elytra', 'totem', 'beacon',
+            'failed', 'error', 'cannot', 'not enough',
+            'died', 'killed', 'defeated'
+        ];
+
+        // Medium importance
+        const mediumImportance = [
+            'iron', 'gold', 'redstone', 'lapis',
+            'crafted', 'built', 'placed', 'completed',
+            'found', 'discovered', 'reached'
+        ];
+
+        // Low importance (routine)
+        const lowImportance = [
+            'dirt', 'cobblestone', 'wood', 'stone',
+            'walking', 'moving', 'looking'
+        ];
+
+        // Adjust score based on content
+        for (const word of highImportance) {
+            if (resultLower.includes(word)) {
+                score += 3;
+                break;
+            }
+        }
+
+        for (const word of mediumImportance) {
+            if (resultLower.includes(word)) {
+                score += 1;
+                break;
+            }
+        }
+
+        for (const word of lowImportance) {
+            if (resultLower.includes(word)) {
+                score -= 2;
+                break;
+            }
+        }
+
+        // Commands that are inherently more important
+        const importantCommands = ['!newAction', '!craftRecipe', '!smeltItem', '!placeBlock'];
+        if (importantCommands.some(cmd => commandName.includes(cmd))) {
+            score += 1;
+        }
+
+        return Math.max(1, Math.min(10, score));
+    }
+
+    /**
+     * Learn from successful actions - populates Semantic and Procedural memory
+     */
+    async _learnFromAction(commandName, fullCommand, result) {
+        if (!this.persistentMemory?.initialized) return;
+
+        try {
+            const resultLower = result.toLowerCase();
+            const success = !resultLower.includes('failed') &&
+                           !resultLower.includes('error') &&
+                           !resultLower.includes('cannot') &&
+                           !resultLower.includes('not enough');
+
+            // SEMANTIC: Learn recipes from successful crafting
+            if (commandName === '!craftRecipe' && success && resultLower.includes('successfully')) {
+                const itemMatch = fullCommand.match(/!craftRecipe\s*\(\s*["']([^"']+)["']/);
+                if (itemMatch) {
+                    const item = itemMatch[1];
+                    await this.persistentMemory.learnRecipe(item, {
+                        notes: `Learned from successful crafting: ${result.substring(0, 100)}`,
+                        requiresCraftingTable: resultLower.includes('crafting_table')
+                    });
+                    console.log(`[SemanticMemory] Learned recipe for: ${item}`);
+                }
+            }
+
+            // SEMANTIC: Learn locations from rememberPlace
+            if (commandName === '!rememberPlace') {
+                const placeMatch = fullCommand.match(/!rememberPlace\s*\(\s*["']([^"']+)["']/);
+                if (placeMatch && this.bot.entity?.position) {
+                    const name = placeMatch[1];
+                    const pos = this.bot.entity.position;
+                    await this.persistentMemory.rememberLocation(name, {
+                        x: Math.floor(pos.x),
+                        y: Math.floor(pos.y),
+                        z: Math.floor(pos.z),
+                        dimension: this.bot.game?.dimension,
+                        tags: ['user_saved']
+                    });
+                }
+            }
+
+            // SEMANTIC: Learn facts from exploration
+            if (commandName === '!searchForBlock' && success) {
+                const blockMatch = fullCommand.match(/!searchForBlock\s*\(\s*["']([^"']+)["']/);
+                if (blockMatch) {
+                    const block = blockMatch[1];
+                    const coordsMatch = result.match(/at\s*\(?\s*(-?\d+),?\s*(-?\d+),?\s*(-?\d+)/);
+                    if (coordsMatch) {
+                        await this.persistentMemory.learnFact('mining',
+                            `Found ${block} at approximately ${coordsMatch[1]}, ${coordsMatch[2]}, ${coordsMatch[3]}`
+                        );
+                    }
+                }
+            }
+
+            // SEMANTIC: Learn mob behaviors from combat
+            if ((commandName === '!attack' || commandName === '!kill') && success) {
+                const mobMatch = fullCommand.match(/!\w+\s*\(\s*["']([^"']+)["']/);
+                if (mobMatch && resultLower.includes('killed')) {
+                    const mob = mobMatch[1];
+                    await this.persistentMemory.learnMobBehavior(mob, {
+                        hostile: true,
+                        notes: `Successfully killed. ${result.substring(0, 50)}`
+                    });
+                    if (this.persistentMemory.semantic?.connected) {
+                        await this.persistentMemory.semantic.recordMobEncounter(mob, 'killed');
+                    }
+                }
+            }
+
+            // PROCEDURAL: Learn skills from successful complex actions
+            if (commandName === '!newAction' && success) {
+                // Extract the action code from the coder
+                const actionCode = this.coder?.lastGeneratedCode;
+                const actionDescription = fullCommand.replace('!newAction', '').trim();
+
+                if (actionCode && actionDescription) {
+                    const skillName = `action_${Date.now()}`;
+                    await this.persistentMemory.learnSkill(
+                        skillName,
+                        actionDescription,
+                        actionCode,
+                        [] // preconditions would need more analysis
+                    );
+                    console.log(`[ProceduralMemory] Learned skill: ${skillName}`);
+                }
+            }
+
+        } catch (error) {
+            // Silent fail for learning - don't interrupt gameplay
+            console.error('[Memory] Learning failed:', error.message);
+        }
     }
 }
