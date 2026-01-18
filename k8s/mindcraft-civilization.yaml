@@ -66,8 +66,37 @@ spec:
             cpu: "3"
             memory: 4Gi
         volumeMounts:
+        # Mount each bot's memory directory separately (not /app/bots which contains profiles)
         - name: bot-memories
-          mountPath: /app/bots
+          mountPath: /app/bots/Andy
+          subPath: Andy
+        - name: bot-memories
+          mountPath: /app/bots/Bruno
+          subPath: Bruno
+        - name: bot-memories
+          mountPath: /app/bots/Carlos
+          subPath: Carlos
+        - name: bot-memories
+          mountPath: /app/bots/Diana
+          subPath: Diana
+        - name: bot-memories
+          mountPath: /app/bots/Elena
+          subPath: Elena
+        - name: bot-memories
+          mountPath: /app/bots/Felix
+          subPath: Felix
+        - name: bot-memories
+          mountPath: /app/bots/Gina
+          subPath: Gina
+        - name: bot-memories
+          mountPath: /app/bots/Hugo
+          subPath: Hugo
+        - name: bot-memories
+          mountPath: /app/bots/Iris
+          subPath: Iris
+        - name: bot-memories
+          mountPath: /app/bots/Juan
+          subPath: Juan
         livenessProbe:
           httpGet:
             path: /
