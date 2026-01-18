@@ -50,6 +50,21 @@ export function createMindServer(host_public = false, port = 8080) {
     server = http.createServer(app);
     io = new Server(server);
 
+    // Health check endpoint for Kubernetes probes
+    app.get('/health', (req, res) => {
+        res.status(200).json({ status: 'ok', agents: Object.keys(agent_connections).length });
+    });
+
+    // Root path health check (for backward compatibility)
+    app.get('/', (req, res, next) => {
+        // If it's a health check (no Accept header for HTML), return simple OK
+        if (!req.headers.accept || !req.headers.accept.includes('text/html')) {
+            res.status(200).send('OK');
+            return;
+        }
+        next();
+    });
+
     // Serve static files
     const __dirname = path.dirname(fileURLToPath(import.meta.url));
     app.use(express.static(path.join(__dirname, 'public')));
