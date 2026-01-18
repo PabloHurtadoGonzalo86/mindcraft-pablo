@@ -10,24 +10,24 @@ const settings = {
 
     "base_profile": "survival", // survival mode for autonomous agent
     "profiles": [
-        "./andy-hybrid.json", // Hybrid profile with autonomous learning
-        // "./profiles/gpt.json",
-        // "./profiles/claude.json",
-        // "./profiles/gemini.json",
-        // "./profiles/llama.json",
-        // "./profiles/qwen.json",
-        // "./profiles/grok.json",
-        // "./profiles/mistral.json",
-        // "./profiles/deepseek.json",
-        // "./profiles/mercury.json",
-        // "./profiles/andy-4.json", // Supports up to 75 messages!
+        // === MINECRAFT AI CIVILIZATION - 10 BOTS ===
+        "./bots/andy-leader.json",      // Andy - Village Leader
+        "./bots/bruno-miner.json",      // Bruno - Miner (ores, underground)
+        "./bots/carlos-lumberjack.json", // Carlos - Lumberjack (wood)
+        "./bots/diana-farmer.json",     // Diana - Farmer (food)
+        "./bots/elena-builder.json",    // Elena - Builder (construction)
+        "./bots/felix-crafter.json",    // Felix - Crafter (tools, items)
+        "./bots/gina-explorer.json",    // Gina - Explorer (scouting)
+        "./bots/hugo-guard.json",       // Hugo - Guard (defense)
+        "./bots/iris-merchant.json",    // Iris - Merchant (trade, resources)
+        "./bots/juan-smith.json",       // Juan - Smith (smelting, armor)
 
-        // using more than 1 profile requires you to /msg each bot indivually
-        // individual profiles override values from the base profile
+        // Note: All bots share the same Gemini API key and memory systems
+        // They coordinate via Redis pub/sub (VillageCoordinator)
     ],
 
     "load_memory": true, // enable memory persistence
-    "init_message": "Hola! Soy Andy, tu asistente de Minecraft. Escribe en el chat para hablar conmigo!", // sends to all on spawn
+    "init_message": "I'm online and ready to work with the village!", // sends to all on spawn
     "only_chat_with": [], // users that the bots listen to and send general messages to. if empty it will chat publicly
 
     "speak": false,

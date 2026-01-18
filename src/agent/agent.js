@@ -19,6 +19,7 @@ import { speak } from './speak.js';
 import { log, validateNameFormat, handleDisconnection } from './connection_handler.js';
 import PersistentMemorySystem from '../memory/index.js';
 import { integrateHybridSystem } from '../hybrid/integration.js';
+import { initializeCoordination, addCoordinationCommands } from '../coordination/index.js';
 
 export class Agent {
     async start(load_mem=false, init_message=null, count_id=0) {
@@ -174,6 +175,18 @@ export class Agent {
                     } catch (hybridError) {
                         console.error('[HybridSystem] Failed to initialize:', hybridError.message);
                     }
+                }
+
+                // Initialize Village Coordination System
+                try {
+                    await initializeCoordination(this, {
+                        redisHost: process.env.REDIS_HOST || 'redis-master',
+                        redisPort: process.env.REDIS_PORT || 6379
+                    });
+                    addCoordinationCommands(this);
+                    console.log(`[VillageCoordinator] ${this.name} joined the village`);
+                } catch (coordError) {
+                    console.error('[VillageCoordinator] Failed to initialize:', coordError.message);
                 }
 
             } catch (error) {
