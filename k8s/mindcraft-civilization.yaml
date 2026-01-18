@@ -85,20 +85,7 @@ spec:
       volumes:
       - name: bot-memories
         persistentVolumeClaim:
-          claimName: mindcraft-civilization-pvc
----
-# PVC for bot memories
-apiVersion: v1
-kind: PersistentVolumeClaim
-metadata:
-  name: mindcraft-civilization-pvc
-  namespace: minecraft-ai
-spec:
-  accessModes:
-    - ReadWriteOnce
-  resources:
-    requests:
-      storage: 2Gi
+          claimName: bot-memory-pvc
 ---
 # Service for MindServer UI
 apiVersion: v1
