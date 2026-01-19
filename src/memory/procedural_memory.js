@@ -14,7 +14,8 @@
 export class ProceduralMemory {
     constructor(config = {}) {
         this.qdrantHost = config.qdrantHost || process.env.QDRANT_HOST || 'qdrant.minecraft-ai.svc.cluster.local';
-        this.qdrantPort = config.qdrantPort || process.env.QDRANT_PORT || 6333;
+        // Use QDRANT_SERVICE_PORT_HTTP (K8s sets QDRANT_PORT to tcp://ip:port format)
+        this.qdrantPort = config.qdrantPort || process.env.QDRANT_SERVICE_PORT_HTTP || 6333;
         this.collectionName = config.collectionName || 'agent_skills';
         this.vectorSize = 384;
         this.baseUrl = `http://${this.qdrantHost}:${this.qdrantPort}`;

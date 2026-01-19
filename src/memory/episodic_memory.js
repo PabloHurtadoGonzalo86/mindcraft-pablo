@@ -9,7 +9,8 @@ import { v4 as uuidv4 } from 'uuid';
 export class EpisodicMemory {
     constructor(config = {}) {
         this.qdrantHost = config.qdrantHost || process.env.QDRANT_HOST || 'qdrant.minecraft-ai.svc.cluster.local';
-        this.qdrantPort = config.qdrantPort || process.env.QDRANT_PORT || 6333;
+        // Use QDRANT_SERVICE_PORT_HTTP (K8s sets QDRANT_PORT to tcp://ip:port format)
+        this.qdrantPort = config.qdrantPort || process.env.QDRANT_SERVICE_PORT_HTTP || 6333;
         this.collectionName = config.collectionName || 'agent_memories';
         this.vectorSize = 384; // Size for all-MiniLM-L6-v2 embeddings
         this.baseUrl = `http://${this.qdrantHost}:${this.qdrantPort}`;
