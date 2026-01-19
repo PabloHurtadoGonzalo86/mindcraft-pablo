@@ -69,6 +69,9 @@ export class Agent {
         });
         await this.persistentMemory.initialize();
 
+        // Alias para compatibilidad con código que usa agent.memory
+        this.memory = this.persistentMemory;
+
         // load mem first before doing task
         let save_data = null;
         if (load_mem) {
@@ -162,6 +165,13 @@ export class Agent {
                 // Initialize Hybrid Learning System (Voyager-style)
                 if (settings.allow_insecure_coding) {
                     try {
+                        // Lista completa de todos los bots de la civilización
+                        // CRÍTICO: Necesario para que ModeManager no los cuente como jugadores humanos
+                        const ALL_CIVILIZATION_BOTS = [
+                            'Andy', 'Bruno', 'Carlos', 'Diana', 'Elena',
+                            'Felix', 'Gina', 'Hugo', 'Iris', 'Juan'
+                        ];
+
                         integrateHybridSystem(this, {
                             defaultMode: 'hybrid',
                             autonomousDelay: 60000, // 1 minute without players → autonomous
@@ -169,9 +179,10 @@ export class Agent {
                             useLLMVerification: true,
                             maxRetries: 3,
                             taskTimeoutMs: 5 * 60 * 1000, // 5 minutes per task
-                            botNames: [this.name]
+                            botNames: ALL_CIVILIZATION_BOTS  // Usar TODOS los bots, no solo el propio
                         });
                         console.log(`[HybridSystem] Integrated successfully for ${this.name}`);
+                        console.log(`[HybridSystem] Bot exclusion list: ${ALL_CIVILIZATION_BOTS.join(', ')}`);
                     } catch (hybridError) {
                         console.error('[HybridSystem] Failed to initialize:', hybridError.message);
                     }

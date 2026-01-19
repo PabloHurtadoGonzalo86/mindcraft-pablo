@@ -569,10 +569,15 @@ export class CurriculumEngine {
      * Guarda un skill aprendido en ProceduralMemory
      */
     async _saveLearnedSkill(task) {
-        if (!this.agent.memory?.procedural) return;
+        // Usar persistentMemory (nombre correcto del sistema de memoria en el agente)
+        const memory = this.agent.persistentMemory || this.agent.memory;
+        if (!memory?.procedural) {
+            console.log('[Curriculum] No procedural memory available to save skill');
+            return;
+        }
 
         try {
-            await this.agent.memory.procedural.learnFromSuccess(
+            await memory.procedural.learnFromSuccess(
                 task.name,
                 task.description,
                 task.command,

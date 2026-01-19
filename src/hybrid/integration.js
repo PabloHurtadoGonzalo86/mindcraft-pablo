@@ -13,6 +13,14 @@ import { HybridSystem, MODE } from './index.js';
 
 let hybridInstance = null;
 
+// Lista completa de todos los bots de la civilización
+// CRÍTICO: Todos los bots deben estar aquí para que el ModeManager
+// no los cuente como "jugadores humanos" y permita el modo AUTONOMOUS
+const ALL_CIVILIZATION_BOTS = [
+    'Andy', 'Bruno', 'Carlos', 'Diana', 'Elena',
+    'Felix', 'Gina', 'Hugo', 'Iris', 'Juan'
+];
+
 /**
  * Integra el sistema híbrido en un agent existente
  * @param {Agent} agent - Instancia del agent de Mindcraft
@@ -32,7 +40,7 @@ export function integrateHybridSystem(agent, config = {}) {
         maxRetries: 3,
         taskTimeoutMs: 5 * 60 * 1000, // 5 minutos
         excludeBots: true,
-        botNames: [agent.name]
+        botNames: ALL_CIVILIZATION_BOTS  // Usar TODOS los bots, no solo el propio
     };
 
     const finalConfig = { ...defaultConfig, ...config };

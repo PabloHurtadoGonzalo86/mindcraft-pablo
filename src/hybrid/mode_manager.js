@@ -73,7 +73,11 @@ export class ModeManager {
 
         this.initialized = true;
         console.log(`[ModeManager] Initialized in ${this.mode} mode`);
-        console.log(`[ModeManager] Players online: ${this.playersOnline.size}`);
+        console.log(`[ModeManager] Bot exclusion list (${this.botNames.length} bots): ${this.botNames.join(', ')}`);
+        console.log(`[ModeManager] Human players online: ${this.playersOnline.size}`);
+        if (this.playersOnline.size === 0) {
+            console.log(`[ModeManager] No human players detected - autonomous learning will be enabled`);
+        }
 
         // Iniciar en el modo correcto
         this._evaluateMode();

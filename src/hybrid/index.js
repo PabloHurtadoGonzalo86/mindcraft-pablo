@@ -110,14 +110,16 @@ export class HybridSystem {
         this._lastModeChangeTime = now;
 
         // Guardar memoria episódica del cambio de modo
-        if (this.agent.memory?.episodic) {
-            this.agent.memory.episodic.store({
-                type: 'mode_change',
-                from: oldMode,
-                to: newMode,
-                timestamp: new Date().toISOString(),
-                curriculumProgress: this.curriculum.getProgress()
-            }).catch(err => console.error('[HybridSystem] Failed to store mode change:', err));
+        // Usar persistentMemory (nombre correcto del sistema de memoria en el agente)
+        const memory = this.agent.persistentMemory || this.agent.memory;
+        if (memory?.initialized) {
+            memory.remember(
+                `Mode changed from ${oldMode} to ${newMode}. Curriculum progress: ${this.curriculum.getProgress().percentage}%`,
+                {
+                    type: 'mode_change',
+                    importance: 7
+                }
+            ).catch(err => console.error('[HybridSystem] Failed to store mode change:', err));
         }
     }
 
