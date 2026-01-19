@@ -1010,11 +1010,12 @@ export async function giveToPlayer(bot, itemType, username, num=1) {
         log(bot, `You cannot give items to yourself.`);
         return false;
     }
-    let player = bot.players[username].entity
-    if (!player) {
+    let playerData = bot.players[username];
+    if (!playerData || !playerData.entity) {
         log(bot, `Could not find ${username}.`);
         return false;
     }
+    let player = playerData.entity;
     await goToPlayer(bot, username, 3);
     // if we are 2 below the player
     log(bot, bot.entity.position.y, player.position.y);
@@ -1313,11 +1314,12 @@ export async function goToPlayer(bot, username, distance=3) {
 
     bot.modes.pause('self_defense');
     bot.modes.pause('cowardice');
-    let player = bot.players[username].entity
-    if (!player) {
+    let playerData = bot.players[username];
+    if (!playerData || !playerData.entity) {
         log(bot, `Could not find ${username}.`);
         return false;
     }
+    let player = playerData.entity;
 
     distance = Math.max(distance, 0.5);
     const goal = new pf.goals.GoalFollow(player, distance);
@@ -1337,9 +1339,10 @@ export async function followPlayer(bot, username, distance=4) {
      * @example
      * await skills.followPlayer(bot, "player");
      **/
-    let player = bot.players[username].entity
-    if (!player)
+    let playerData = bot.players[username];
+    if (!playerData || !playerData.entity)
         return false;
+    let player = playerData.entity;
 
     const move = new pf.Movements(bot);
     move.digCost = 10;
