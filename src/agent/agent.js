@@ -54,8 +54,9 @@ export class Agent {
         this.persistentMemory = new PersistentMemorySystem({
             agentName: this.name,
             // Episodic + Procedural Memory (Qdrant)
+            // Note: K8s sets QDRANT_PORT to 'tcp://ip:port' format, use QDRANT_SERVICE_PORT_HTTP instead
             qdrantHost: process.env.QDRANT_HOST || 'qdrant.minecraft-ai.svc.cluster.local',
-            qdrantPort: process.env.QDRANT_PORT || 6333,
+            qdrantPort: process.env.QDRANT_SERVICE_PORT_HTTP || 6333,
             // Working Memory (Redis)
             redisHost: process.env.REDIS_HOST || 'redis-master.minecraft-ai.svc.cluster.local',
             redisPort: process.env.REDIS_PORT || 6379,
