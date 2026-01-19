@@ -452,9 +452,24 @@ export class CurriculumEngine {
             const task = this._selectNextTask();
 
             if (!task) {
-                console.log('[Curriculum] 🎉 All tasks completed! Minecraft mastered!');
-                this.isRunning = false;
-                break;
+                // Check if actually all completed or just blocked/failed
+                const remaining = this.techTree.length - this.completedTasks.length;
+                const failed = this.failedTasks.length;
+
+                if (remaining === 0) {
+                    console.log('[Curriculum] 🎉 All tasks completed! Minecraft mastered!');
+                    this.isRunning = false;
+                    break;
+                } else if (failed > 0 && remaining === failed) {
+                    console.log(`[Curriculum] ⚠️ Blocked: ${failed} failed tasks. Retrying...`);
+                    this.retryFailedTasks();
+                    await this._sleep(10000);
+                    continue;
+                } else {
+                    console.log(`[Curriculum] ⏳ Waiting: ${remaining} tasks remaining but prerequisites not met`);
+                    await this._sleep(30000); // Wait for other bots to complete prereqs
+                    continue;
+                }
             }
 
             this.currentTask = task;
