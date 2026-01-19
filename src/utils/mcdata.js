@@ -65,6 +65,10 @@ export function initBot(username) {
     }
 
     const bot = createBot(options);
+
+    // Increase max listeners to prevent memory leak warnings with multiple plugins
+    bot.setMaxListeners(30);
+
     bot.loadPlugin(pathfinder);
     bot.loadPlugin(pvp);
     bot.loadPlugin(collectblock);
