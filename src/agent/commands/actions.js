@@ -132,7 +132,7 @@ export const actionsList = [
         },
         perform: runAsAction(async (agent, block_type, range) => {
             if (range < 32) {
-                log(agent.bot, `Minimum search range is 32.`);
+                console.log(`[${agent.name}] Minimum search range is 32, adjusting.`);
                 range = 32;
             }
             await skills.goToNearestBlock(agent.bot, block_type, 4, range);
