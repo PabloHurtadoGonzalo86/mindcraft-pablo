@@ -475,8 +475,10 @@ export class CurriculumEngine {
                     console.log('[Curriculum] 🎉 All tasks completed! Minecraft mastered!');
                     this.isRunning = false;
                     break;
-                } else if (failed > 0 && remaining === failed) {
-                    console.log(`[Curriculum] ⚠️ Blocked: ${failed} failed tasks. Retrying...`);
+                } else if (failed > 0) {
+                    // If no available tasks but there are failed ones, retry them
+                    // This fixes the bug where failing get_wood blocked ALL progress
+                    console.log(`[Curriculum] ⚠️ Blocked by ${failed} failed tasks, clearing to retry...`);
                     this.retryFailedTasks();
                     await this._sleep(10000);
                     continue;
