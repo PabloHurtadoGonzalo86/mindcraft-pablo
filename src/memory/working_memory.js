@@ -226,6 +226,33 @@ export class WorkingMemory {
         return safeJsonParse(data);
     }
 
+    // ==================== Curriculum Progress ====================
+
+    async setCurriculumProgress(progress) {
+        if (!this.connected) await this.connect();
+
+        const data = JSON.stringify({
+            completedTasks: progress.completedTasks || [],
+            failedTasks: progress.failedTasks || [],
+            currentTask: progress.currentTask || null,
+            totalTasks: progress.totalTasks || 32,
+            progressPercent: progress.progressPercent || 0,
+            isRunning: progress.isRunning || false,
+            isPaused: progress.isPaused || false,
+            lastUpdate: new Date().toISOString()
+        });
+
+        // Store without TTL (persistent)
+        await this.client.set(`${this.prefix}curriculum`, data);
+    }
+
+    async getCurriculumProgress() {
+        if (!this.connected) await this.connect();
+
+        const data = await this.client.get(`${this.prefix}curriculum`);
+        return safeJsonParse(data);
+    }
+
     // ==================== Context Summary ====================
 
     async getContextSummary() {

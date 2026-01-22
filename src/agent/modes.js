@@ -76,7 +76,7 @@ const modes_list = [
                     });
                 }
             }
-            else if (Date.now() - bot.lastDamageTime < 3000 && (bot.health < 5 || bot.lastDamageTaken >= bot.health)) {
+            else if (bot.food === 0 || (Date.now() - bot.lastDamageTime < 3000 && (bot.health < 5 || bot.lastDamageTaken >= bot.health))) {
                 say(agent, 'I\'m dying!');
                 execute(this, agent, async () => {
                     await skills.moveAway(bot, 20);
@@ -84,6 +84,64 @@ const modes_list = [
             }
             else if (agent.isIdle()) {
                 bot.clearControlStates(); // clear jump if not in danger or doing anything else
+            }
+        }
+    },
+    {
+        name: 'food_seeking',
+        description: 'Actively seek and obtain food when hungry. Interrupts all actions.',
+        interrupts: ['all'],
+        on: true,
+        active: false,
+        last_alert: 0,
+        update: async function (agent) {
+            const bot = agent.bot;
+            if (bot.food > 10) return; // Only activate if hungry
+
+            // 1. Check if has food in inventory
+            const food = bot.inventory.items().find(item =>
+                item.name.includes('cooked') ||
+                item.name === 'bread' ||
+                item.name === 'apple' ||
+                item.name === 'golden_apple' ||
+                item.name === 'carrot' ||
+                item.name === 'potato' ||
+                item.name === 'baked_potato' ||
+                item.name === 'beetroot' ||
+                item.name === 'melon_slice' ||
+                item.name === 'sweet_berries' ||
+                item.name === 'glow_berries'
+            );
+
+            if (food) {
+                // Has food, auto-eat will handle it
+                return;
+            }
+
+            // 2. Hunt animals for food (extended range when hungry)
+            const huntable = world.getNearestEntityWhere(bot, entity => mc.isHuntable(entity), 32);
+            if (huntable && await world.isClearPath(bot, huntable)) {
+                say(agent, `I'm hungry! Hunting ${huntable.name} for food!`);
+                execute(this, agent, async () => {
+                    await skills.attackEntity(bot, huntable);
+                });
+                return;
+            }
+
+            // 3. Look for crops
+            const crops = world.getNearestBlock(bot, 'wheat', 32);
+            if (crops) {
+                say(agent, `I'm hungry! Looking for crops!`);
+                execute(this, agent, async () => {
+                    await skills.goToPosition(bot, crops.position.x, crops.position.y, crops.position.z, 2);
+                });
+                return;
+            }
+
+            // 4. REAL EMERGENCY - ask for help (but not too often)
+            if (Date.now() - this.last_alert > 30000) { // Only alert every 30 seconds
+                this.last_alert = Date.now();
+                say(agent, `EMERGENCY: I'm starving and can't find food! Health: ${bot.health.toFixed(1)} Food: ${bot.food}`);
             }
         }
     },
@@ -300,6 +358,98 @@ const modes_list = [
         on: false,
         active: false,
         update: function (agent) { /* do nothing */ }
+    },
+    // === ROLE-SPECIFIC BEHAVIORS ===
+    {
+        name: 'farmer_role',
+        description: 'Diana (FARMER): Automatically tend crops and produce food when idle.',
+        interrupts: [],
+        on: false, // Enabled only for Diana
+        active: false,
+        last_farm_check: 0,
+        update: async function (agent) {
+            // Only run every 30 seconds
+            if (Date.now() - this.last_farm_check < 30000) return;
+            this.last_farm_check = Date.now();
+
+            const bot = agent.bot;
+
+            // Check if we have seeds but little food
+            const food = bot.inventory.items().find(item =>
+                item.name.includes('cooked') || item.name === 'bread'
+            );
+            const seeds = bot.inventory.items().find(item =>
+                item.name === 'wheat_seeds' || item.name === 'beetroot_seeds'
+            );
+
+            // If low on food and have seeds, farm
+            if (!food && seeds) {
+                const farmland = world.getNearestBlock(bot, 'farmland', 32);
+                if (farmland) {
+                    execute(this, agent, async () => {
+                        say(agent, 'Time to tend the crops!');
+                        await skills.goToPosition(bot, farmland.position.x, farmland.position.y, farmland.position.z, 2);
+                    });
+                }
+            }
+        }
+    },
+    {
+        name: 'guard_role',
+        description: 'Hugo (GUARD): Patrol and protect other bots from danger.',
+        interrupts: ['all'],
+        on: false, // Enabled only for Hugo
+        active: false,
+        last_patrol: 0,
+        update: async function (agent) {
+            const bot = agent.bot;
+
+            // Actively hunt hostile mobs within larger range
+            const enemy = world.getNearestEntityWhere(bot, entity => mc.isHostile(entity), 24);
+            if (enemy && await world.isClearPath(bot, enemy)) {
+                say(agent, `Hostile detected! Engaging ${enemy.name}!`);
+                execute(this, agent, async () => {
+                    await skills.attackEntity(bot, enemy);
+                });
+                return;
+            }
+
+            // Patrol around spawn area every 2 minutes
+            if (Date.now() - this.last_patrol > 120000) {
+                this.last_patrol = Date.now();
+                say(agent, 'Patrolling the area...');
+                execute(this, agent, async () => {
+                    await skills.moveAway(bot, 10);
+                });
+            }
+        }
+    },
+    {
+        name: 'merchant_role',
+        description: 'Iris (MERCHANT): Manage and distribute resources to other bots.',
+        interrupts: [],
+        on: false, // Enabled only for Iris
+        active: false,
+        last_inventory_check: 0,
+        update: async function (agent) {
+            // Check inventory every minute
+            if (Date.now() - this.last_inventory_check < 60000) return;
+            this.last_inventory_check = Date.now();
+
+            const bot = agent.bot;
+            const inventory = bot.inventory.items();
+
+            // Count excess food
+            const foodItems = inventory.filter(item =>
+                item.name.includes('cooked') || item.name === 'bread'
+            );
+            const totalFood = foodItems.reduce((sum, item) => sum + item.count, 0);
+
+            // If we have excess food (> 32), announce it
+            if (totalFood > 32) {
+                say(agent, `I have ${totalFood} food items available for distribution!`);
+            }
+        }
     }
 ];
 
@@ -442,5 +592,23 @@ export function initModes(agent) {
     let modes_json = agent.prompter.getInitModes();
     if (modes_json) {
         agent.bot.modes.loadJson(modes_json);
+    }
+
+    // Enable role-specific modes based on agent name
+    _enableRoleModes(agent.name);
+}
+
+function _enableRoleModes(agentName) {
+    // Map agent names to their role modes
+    const roleMap = {
+        'Diana': 'farmer_role',
+        'Hugo': 'guard_role',
+        'Iris': 'merchant_role'
+    };
+
+    const roleMode = roleMap[agentName];
+    if (roleMode && modes_map[roleMode]) {
+        modes_map[roleMode].on = true;
+        console.log(`[Modes] Enabled ${roleMode} for ${agentName}`);
     }
 }

@@ -154,11 +154,50 @@ export class VillageCoordinator {
             const alert = JSON.parse(message);
             console.log(`[VillageCoordinator] ALERT from ${alert.from}:`, alert.message);
 
+            // Auto-respond to food emergencies
+            if (alert.message && alert.message.includes('starving')) {
+                this._handleFoodEmergency(alert);
+            }
+
             if (this.onAlert) {
                 this.onAlert(alert);
             }
         } catch (e) {
             console.error('[VillageCoordinator] Failed to parse alert:', e.message);
+        }
+    }
+
+    async _handleFoodEmergency(alert) {
+        // Only Diana (FARMER) should respond to food emergencies
+        if (this.role.key !== 'FARMER') return;
+
+        const botInNeed = alert.from;
+        const location = alert.location;
+
+        console.log(`[VillageCoordinator] Diana responding to food emergency from ${botInNeed}`);
+
+        // Get position of bot in need from Redis
+        try {
+            const gameState = await this.redisClient.get(`mindcraft:${botInNeed}:gameState`);
+            if (gameState) {
+                const state = JSON.parse(gameState);
+                const pos = state.position;
+
+                // Assign task to self to bring food
+                if (this.onTaskAssigned) {
+                    this.onTaskAssigned({
+                        id: `emergency_food_${Date.now()}`,
+                        description: `EMERGENCY: Bring food to ${botInNeed} at position ${pos.x}, ${pos.y}, ${pos.z}`,
+                        assignedTo: this.agentName,
+                        priority: 10, // Highest priority
+                        emergency: true,
+                        targetBot: botInNeed,
+                        targetPosition: pos
+                    });
+                }
+            }
+        } catch (e) {
+            console.error('[VillageCoordinator] Failed to handle food emergency:', e.message);
         }
     }
 
@@ -291,6 +330,42 @@ export class VillageCoordinator {
      */
     async requestHelp(description, requiredRole = null) {
         return this.sendAlert(`HELP NEEDED: ${description}`, 'warning');
+    }
+
+    /**
+     * Send emergency food request
+     */
+    async requestFood(location = null) {
+        const alert = {
+            from: this.agentName,
+            role: this.role.key,
+            message: `EMERGENCY: ${this.agentName} is starving and needs food immediately!`,
+            type: 'danger',
+            location,
+            timestamp: Date.now()
+        };
+
+        await this.redisClient.publish('village:alerts', JSON.stringify(alert));
+        console.log(`[VillageCoordinator] Food emergency sent by ${this.agentName}`);
+        return true;
+    }
+
+    /**
+     * Get bot position from Redis
+     */
+    async getBotPosition(botName) {
+        if (!this.initialized) return null;
+
+        try {
+            const gameState = await this.redisClient.get(`mindcraft:${botName}:gameState`);
+            if (gameState) {
+                const state = JSON.parse(gameState);
+                return state.position;
+            }
+        } catch (e) {
+            console.error(`[VillageCoordinator] Failed to get position for ${botName}:`, e.message);
+        }
+        return null;
     }
 
     /**

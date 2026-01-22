@@ -448,6 +448,21 @@ export class CurriculumEngine {
                 continue;
             }
 
+            // Check survival status first - bot needs food and basic health
+            if (!this._checkSurvivalStatus()) {
+                console.log('[Curriculum] ⚠️ Survival check failed, waiting for bot to stabilize...');
+                await this._sleep(10000);
+                continue;
+            }
+
+            // Check if basic tools are missing (indicates death with old keepInventory=false)
+            const needsRestock = this._checkNeedsRestock();
+            if (needsRestock) {
+                console.log('[Curriculum] 🔧 Missing basic tools, forcing restock...');
+                await this._forceRestock();
+                continue;
+            }
+
             // Seleccionar siguiente tarea
             const task = this._selectNextTask();
 
@@ -660,6 +675,95 @@ export class CurriculumEngine {
         return new Promise(resolve => setTimeout(resolve, ms));
     }
 
+    /**
+     * Check if bot is in survival crisis (low health or food)
+     */
+    _checkSurvivalStatus() {
+        // Bot needs minimum health and food to continue curriculum
+        if (this.bot.health < 10) {
+            console.log(`[Curriculum] Health too low: ${this.bot.health}/20`);
+            return false;
+        }
+        if (this.bot.food < 8) {
+            console.log(`[Curriculum] Food too low: ${this.bot.food}/20`);
+            return false;
+        }
+        return true;
+    }
+
+    /**
+     * Check if bot needs basic tools (died and lost inventory before keepInventory was enabled)
+     */
+    _checkNeedsRestock() {
+        // If we've completed wood tasks but have no tools, we need to restock
+        const hasCompletedWoodTasks = this.completedTasks.includes('get_wood') ||
+                                       this.completedTasks.includes('craft_planks');
+
+        if (!hasCompletedWoodTasks) return false; // New bot, no need to restock
+
+        const inventory = this._getInventory();
+        const hasAnyPickaxe = this._hasItem(inventory, 'wooden_pickaxe') ||
+                              this._hasItem(inventory, 'stone_pickaxe') ||
+                              this._hasItem(inventory, 'iron_pickaxe') ||
+                              this._hasItem(inventory, 'diamond_pickaxe');
+
+        const hasAnyAxe = this._hasItem(inventory, 'wooden_axe') ||
+                          this._hasItem(inventory, 'stone_axe') ||
+                          this._hasItem(inventory, 'iron_axe') ||
+                          this._hasItem(inventory, 'diamond_axe');
+
+        // If completed tool tasks but has no tools, needs restock
+        if (this.completedTasks.includes('craft_wooden_pickaxe') && !hasAnyPickaxe) {
+            return true;
+        }
+
+        return false;
+    }
+
+    /**
+     * Force bot to get basic tools again
+     */
+    async _forceRestock() {
+        console.log('[Curriculum] Starting restock procedure...');
+
+        try {
+            // Use self-prompter to get basic tools
+            const restockPrompt = `EMERGENCY RESTOCK: I lost my tools. I need to:
+1. Collect 8 wood logs
+2. Craft planks
+3. Craft a crafting table
+4. Craft sticks
+5. Craft a wooden pickaxe
+Do this as fast as possible!`;
+
+            await this.agent.self_prompter.start(restockPrompt);
+
+            // Wait for completion with timeout
+            const startTime = Date.now();
+            const restockTimeout = 3 * 60 * 1000; // 3 minutes
+
+            while (this.agent.self_prompter.isActive()) {
+                if (Date.now() - startTime > restockTimeout) {
+                    console.log('[Curriculum] Restock timeout');
+                    await this.agent.self_prompter.stop();
+                    break;
+                }
+
+                // Check if we have a pickaxe now
+                const inv = this._getInventory();
+                if (this._hasItem(inv, 'wooden_pickaxe') || this._hasItem(inv, 'stone_pickaxe')) {
+                    console.log('[Curriculum] ✓ Restock successful');
+                    await this.agent.self_prompter.stop();
+                    break;
+                }
+
+                await this._sleep(2000);
+            }
+        } catch (error) {
+            console.error('[Curriculum] Restock failed:', error.message);
+        }
+    }
+
     // === Persistencia ===
 
     _saveProgress() {
@@ -676,6 +780,31 @@ export class CurriculumEngine {
             );
         } catch (error) {
             console.error('[Curriculum] Failed to save progress:', error.message);
+        }
+
+        // Also publish to Redis for dashboard
+        this._publishProgressToRedis();
+    }
+
+    async _publishProgressToRedis() {
+        const memory = this.agent.persistentMemory || this.agent.memory;
+        if (!memory?.working) {
+            return; // No working memory available
+        }
+
+        try {
+            await memory.working.setCurriculumProgress({
+                completedTasks: this.completedTasks,
+                failedTasks: this.failedTasks,
+                currentTask: this.currentTask?.name || null,
+                totalTasks: this.techTree.length,
+                progressPercent: Math.round((this.completedTasks.length / this.techTree.length) * 100),
+                isRunning: this.isRunning,
+                isPaused: this.isPaused
+            });
+        } catch (error) {
+            // Silently fail - Redis publish is optional
+            console.debug('[Curriculum] Failed to publish to Redis:', error.message);
         }
     }
 
