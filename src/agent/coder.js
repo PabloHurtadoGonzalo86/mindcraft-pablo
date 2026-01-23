@@ -12,6 +12,7 @@ export class Coder {
         this.fp = '/bots/'+agent.name+'/action-code/';
         this.code_template = '';
         this.code_lint_template = '';
+        this.lastGeneratedCode = null; // Store last successfully executed code for procedural learning
 
         readFile('./bots/execTemplate.js', 'utf8', (err, data) => {
             if (err) throw err;
@@ -86,6 +87,7 @@ export class Coder {
 
                 const code_output = this.agent.actions.getBotOutputSummary();
                 const summary = "Agent wrote this code: \n```" + this._sanitizeCode(code) + "```\nCode Output:\n" + code_output;
+                this.lastGeneratedCode = code; // Store for procedural learning
                 return summary;
             } catch (e) {
                 if (this.agent.bot.interrupt_code)
@@ -119,8 +121,8 @@ export class Coder {
             skills.push(match[1]);
         }
         const allDocs = await this.agent.prompter.skill_libary.getAllSkillDocs();
-        // check function exists
-        const missingSkills = skills.filter(skill => !!allDocs[skill]);
+        // check function exists - allDocs is an array of doc strings, check if any doc contains the skill name
+        const missingSkills = skills.filter(skill => !allDocs.some(doc => doc.includes(`skills.${skill}(`) || doc.includes(`world.${skill}(`)));
         if (missingSkills.length > 0) {
             result += 'These functions do not exist.\n';
             result += '### FUNCTIONS NOT FOUND ###\n';

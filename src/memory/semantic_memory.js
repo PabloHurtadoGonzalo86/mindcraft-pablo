@@ -14,7 +14,7 @@ export class SemanticMemory {
             envHost: process.env.MONGO_HOST
         });
 
-        this.mongoHost = config.mongoHost || process.env.MONGO_HOST || '10.103.13.167';
+        this.mongoHost = config.mongoHost || process.env.MONGO_HOST || 'mongodb';
         this.mongoPort = config.mongoPort || process.env.MONGO_PORT || 27017;
         this.mongoUser = config.mongoUser || process.env.MONGO_USER || 'mindcraft';
         this.mongoPassword = config.mongoPassword || process.env.MONGO_PASSWORD || 'mindcraft_user_2026';

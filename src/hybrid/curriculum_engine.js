@@ -441,6 +441,10 @@ export class CurriculumEngine {
      * Loop principal del curriculum
      */
     async _runLoop() {
+        // Track consecutive survival failures for escalating responses
+        let survivalFailures = 0;
+        const MAX_SURVIVAL_FAILURES = 5;
+
         while (this.isRunning) {
             // Check si está pausado
             if (this.isPaused) {
@@ -450,10 +454,38 @@ export class CurriculumEngine {
 
             // Check survival status first - bot needs food and basic health
             if (!this._checkSurvivalStatus()) {
-                console.log('[Curriculum] ⚠️ Survival check failed, waiting for bot to stabilize...');
-                await this._sleep(10000);
+                survivalFailures++;
+                console.log(`[Curriculum] ⚠️ Survival check failed (${survivalFailures}/${MAX_SURVIVAL_FAILURES})`);
+
+                // Disable conflicting modes immediately in emergency
+                if (this._isCriticalEmergency()) {
+                    this._disableConflictingModes();
+                }
+
+                // Take ACTIVE survival actions instead of just waiting
+                await this._executeSurvivalActions();
+
+                // After survival attempt, check if we're better
+                if (this._checkSurvivalStatus()) {
+                    console.log('[Curriculum] ✓ Survival stabilized, resuming curriculum');
+                    survivalFailures = 0;
+                    this._reEnableModes();
+                } else if (survivalFailures >= MAX_SURVIVAL_FAILURES) {
+                    // If we've failed too many times, try a more aggressive approach
+                    console.log('[Curriculum] ⚠️ Multiple survival failures, trying aggressive recovery...');
+                    await this._aggressiveSurvivalRecovery();
+                    survivalFailures = 0;
+                }
+
+                await this._sleep(5000); // Shorter wait after active survival
                 continue;
             }
+
+            // If we get here, survival is OK - re-enable modes if they were disabled
+            if (this._disabledModes?.length > 0) {
+                this._reEnableModes();
+            }
+            survivalFailures = 0;
 
             // Check if basic tools are missing (indicates death with old keepInventory=false)
             const needsRestock = this._checkNeedsRestock();
@@ -691,6 +723,220 @@ export class CurriculumEngine {
             return false;
         }
         return true;
+    }
+
+    /**
+     * Check if bot is in critical survival emergency
+     */
+    _isCriticalEmergency() {
+        return this.bot.health < 6 || this.bot.food < 4;
+    }
+
+    /**
+     * Execute active survival actions when in crisis
+     * Instead of just waiting, actively try to survive
+     */
+    async _executeSurvivalActions() {
+        const bot = this.bot;
+        const health = bot.health;
+        const food = bot.food;
+
+        console.log(`[Curriculum] 🆘 Executing survival actions (Health: ${health.toFixed(1)}, Food: ${food})`);
+
+        // Track if we're already executing survival
+        if (this._survivalInProgress) {
+            console.log('[Curriculum] Survival actions already in progress');
+            return;
+        }
+        this._survivalInProgress = true;
+
+        try {
+            // 1. First, try to eat if we have food
+            const inventory = this._getInventory();
+            const foodItems = [
+                'cooked_beef', 'cooked_porkchop', 'cooked_mutton', 'cooked_chicken',
+                'cooked_rabbit', 'cooked_cod', 'cooked_salmon', 'baked_potato',
+                'bread', 'golden_apple', 'enchanted_golden_apple', 'apple',
+                'carrot', 'melon_slice', 'sweet_berries', 'glow_berries',
+                'cooked_beef', 'steak', 'beetroot', 'dried_kelp', 'cookie',
+                'pumpkin_pie', 'mushroom_stew', 'rabbit_stew', 'beetroot_soup',
+                'suspicious_stew', 'honey_bottle'
+            ];
+
+            let hasFood = false;
+            for (const foodName of foodItems) {
+                if (inventory[foodName] > 0) {
+                    hasFood = true;
+                    console.log(`[Curriculum] Found food: ${foodName}, attempting to eat...`);
+
+                    // Try to eat using self-prompter
+                    const eatPrompt = `EMERGENCY: My health is ${health.toFixed(1)}/20 and food is ${food}/20. I need to eat NOW. Use !consume("${foodName}") immediately.`;
+                    await this.agent.self_prompter.start(eatPrompt);
+
+                    // Wait a bit for the action to complete
+                    await this._sleep(3000);
+                    await this.agent.self_prompter.stop(false);
+
+                    // Check if we ate
+                    if (bot.food > food) {
+                        console.log(`[Curriculum] ✓ Successfully ate ${foodName}!`);
+                        break;
+                    }
+                }
+            }
+
+            // 2. If no food and food is critical, try to find food
+            if (!hasFood && food < 4) {
+                console.log('[Curriculum] No food in inventory, attempting to find food...');
+
+                // Try to hunt or find crops
+                const huntPrompt = `CRITICAL: I have NO FOOD and am starving (food: ${food}/20). I need to find food urgently! Hunt passive mobs (pig, cow, chicken, sheep) or look for crops/berries. This is life or death!`;
+                await this.agent.self_prompter.start(huntPrompt);
+                await this._sleep(15000); // Give more time for hunting
+                await this.agent.self_prompter.stop(false);
+            }
+
+            // 3. If health is critically low, try to escape danger
+            if (health < 4) {
+                console.log('[Curriculum] Critical health! Attempting to escape...');
+
+                const escapePrompt = `CRITICAL EMERGENCY: Health is ${health.toFixed(1)}/20! I need to escape to safety immediately. Move away from danger, find a safe spot, and don't engage any enemies!`;
+                await this.agent.self_prompter.start(escapePrompt);
+                await this._sleep(5000);
+                await this.agent.self_prompter.stop(false);
+            }
+
+        } catch (error) {
+            console.error('[Curriculum] Survival action error:', error.message);
+        } finally {
+            this._survivalInProgress = false;
+        }
+    }
+
+    /**
+     * Disable conflicting modes during survival emergency
+     */
+    _disableConflictingModes() {
+        const modes = this.bot.modes;
+        if (!modes) return;
+
+        // Disable modes that could interfere with survival
+        const conflictingModes = ['guard_role', 'hunting', 'cowardice'];
+
+        for (const modeName of conflictingModes) {
+            if (modes.exists(modeName) && modes.isOn(modeName)) {
+                console.log(`[Curriculum] Temporarily disabling ${modeName} for survival`);
+                modes.setOn(modeName, false);
+                this._disabledModes = this._disabledModes || [];
+                if (!this._disabledModes.includes(modeName)) {
+                    this._disabledModes.push(modeName);
+                }
+            }
+        }
+    }
+
+    /**
+     * Re-enable modes that were disabled for survival
+     */
+    _reEnableModes() {
+        const modes = this.bot.modes;
+        if (!modes || !this._disabledModes) return;
+
+        for (const modeName of this._disabledModes) {
+            if (modes.exists(modeName)) {
+                console.log(`[Curriculum] Re-enabling ${modeName}`);
+                modes.setOn(modeName, true);
+            }
+        }
+        this._disabledModes = [];
+    }
+
+    /**
+     * Aggressive survival recovery when normal methods fail multiple times
+     */
+    async _aggressiveSurvivalRecovery() {
+        const bot = this.bot;
+        console.log('[Curriculum] 🚨 AGGRESSIVE SURVIVAL RECOVERY INITIATED');
+
+        try {
+            // Stop ALL current actions
+            if (this.agent.actions) {
+                await this.agent.actions.stop();
+            }
+
+            // Disable ALL combat/exploration modes
+            const modes = bot.modes;
+            if (modes) {
+                const modesToDisable = ['guard_role', 'self_defense', 'cowardice', 'hunting', 'farmer_role'];
+                for (const modeName of modesToDisable) {
+                    if (modes.exists(modeName) && modes.isOn(modeName)) {
+                        modes.setOn(modeName, false);
+                        this._disabledModes = this._disabledModes || [];
+                        if (!this._disabledModes.includes(modeName)) {
+                            this._disabledModes.push(modeName);
+                        }
+                    }
+                }
+            }
+
+            // Clear pathfinder to stop any movement
+            if (bot.pathfinder) {
+                bot.pathfinder.stop();
+            }
+
+            // Create a comprehensive survival prompt
+            const health = bot.health;
+            const food = bot.food;
+            const inventory = this._getInventory();
+            const inventorySummary = Object.entries(inventory)
+                .filter(([_, count]) => count > 0)
+                .slice(0, 10)
+                .map(([item, count]) => `${item}: ${count}`)
+                .join(', ');
+
+            const survivalPrompt = `CRITICAL SURVIVAL EMERGENCY!
+
+My current status:
+- Health: ${health.toFixed(1)}/20 (${health < 4 ? 'CRITICAL!' : 'LOW'})
+- Food: ${food}/20 (${food < 4 ? 'STARVING!' : 'LOW'})
+- Inventory: ${inventorySummary || 'nearly empty'}
+
+I MUST survive! My priorities:
+1. If I have ANY food, eat it immediately using !consume
+2. If no food, look for and kill the nearest passive mob (pig, cow, chicken, sheep)
+3. If no mobs, look for berry bushes or crops
+4. Stay away from hostile mobs!
+5. Find a safe spot with light
+
+This is an emergency. Execute the most important survival action NOW!`;
+
+            await this.agent.self_prompter.start(survivalPrompt);
+
+            // Give substantial time for survival actions
+            const maxWait = 60000; // 1 minute max
+            const startTime = Date.now();
+
+            while (Date.now() - startTime < maxWait && this.agent.self_prompter.isActive()) {
+                await this._sleep(2000);
+
+                // Check if we've recovered enough
+                if (bot.health >= 10 && bot.food >= 8) {
+                    console.log('[Curriculum] ✓ Recovery successful!');
+                    await this.agent.self_prompter.stop(false);
+                    break;
+                }
+
+                // Check if health improved at all
+                if (bot.health > health || bot.food > food) {
+                    console.log(`[Curriculum] Recovery progress: Health ${health.toFixed(1)} → ${bot.health.toFixed(1)}, Food ${food} → ${bot.food}`);
+                }
+            }
+
+            await this.agent.self_prompter.stop(false);
+
+        } catch (error) {
+            console.error('[Curriculum] Aggressive recovery error:', error.message);
+        }
     }
 
     /**

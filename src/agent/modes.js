@@ -29,6 +29,7 @@ const modes_list = [
         on: true,
         active: false,
         fall_blocks: ['sand', 'gravel', 'concrete_powder'], // includes matching substrings like 'sandstone' and 'red_sand'
+        last_critical_alert: 0,
         update: async function (agent) {
             const bot = agent.bot;
             let block = bot.blockAt(bot.entity.position);
@@ -76,10 +77,54 @@ const modes_list = [
                     });
                 }
             }
-            else if (bot.food === 0 || (Date.now() - bot.lastDamageTime < 3000 && (bot.health < 5 || bot.lastDamageTaken >= bot.health))) {
-                say(agent, 'I\'m dying!');
+            // IMPROVED: More aggressive survival thresholds
+            // Critical: health < 6 OR food < 4 OR taking damage with low health
+            else if (bot.health < 6 || bot.food < 4 ||
+                     (Date.now() - bot.lastDamageTime < 3000 && (bot.health < 8 || bot.lastDamageTaken >= bot.health * 0.5))) {
+
+                // Determine the severity and respond appropriately
+                const isCritical = bot.health < 4 || bot.food < 2;
+                const isEmergency = bot.health < 6 || bot.food < 4;
+
+                // Alert (but not too frequently)
+                if (isCritical && Date.now() - this.last_critical_alert > 15000) {
+                    this.last_critical_alert = Date.now();
+                    say(agent, `CRITICAL: Health ${bot.health.toFixed(0)}/20, Food ${bot.food}/20! Need help!`);
+                } else if (isEmergency && Date.now() - this.last_critical_alert > 30000) {
+                    this.last_critical_alert = Date.now();
+                    say(agent, `Low health (${bot.health.toFixed(0)}) or food (${bot.food}), need to recover!`);
+                }
+
                 execute(this, agent, async () => {
-                    await skills.moveAway(bot, 20);
+                    // First try to eat if we have food and are hungry
+                    if (bot.food < 14) {
+                        const foodItems = [
+                            'cooked_beef', 'cooked_porkchop', 'cooked_mutton', 'cooked_chicken',
+                            'cooked_cod', 'cooked_salmon', 'baked_potato', 'bread',
+                            'golden_apple', 'apple', 'carrot', 'melon_slice', 'sweet_berries'
+                        ];
+                        for (const foodName of foodItems) {
+                            const food = bot.inventory.items().find(i => i.name === foodName);
+                            if (food) {
+                                try {
+                                    await bot.equip(food, 'hand');
+                                    await bot.consume();
+                                    say(agent, `Ate ${foodName}, feeling better!`);
+                                    return;
+                                } catch (e) {
+                                    // Failed to eat, continue to escape
+                                }
+                            }
+                        }
+                    }
+
+                    // If critical or taking damage, flee
+                    if (isCritical || Date.now() - bot.lastDamageTime < 3000) {
+                        await skills.moveAway(bot, 20);
+                    } else if (isEmergency) {
+                        // Just move away a bit for non-critical emergencies
+                        await skills.moveAway(bot, 8);
+                    }
                 });
             }
             else if (agent.isIdle()) {
@@ -94,12 +139,18 @@ const modes_list = [
         on: true,
         active: false,
         last_alert: 0,
+        last_hunt_attempt: 0,
         update: async function (agent) {
             const bot = agent.bot;
-            if (bot.food > 10) return; // Only activate if hungry
+
+            // Activate earlier and more aggressively when food is low
+            const urgentHunger = bot.food < 6;
+            const moderateHunger = bot.food <= 12;
+
+            if (!urgentHunger && !moderateHunger) return;
 
             // 1. Check if has food in inventory
-            const food = bot.inventory.items().find(item =>
+            const foodItem = bot.inventory.items().find(item =>
                 item.name.includes('cooked') ||
                 item.name === 'bread' ||
                 item.name === 'apple' ||
@@ -110,38 +161,80 @@ const modes_list = [
                 item.name === 'beetroot' ||
                 item.name === 'melon_slice' ||
                 item.name === 'sweet_berries' ||
-                item.name === 'glow_berries'
+                item.name === 'glow_berries' ||
+                item.name === 'dried_kelp' ||
+                item.name === 'cookie' ||
+                item.name === 'pumpkin_pie'
             );
 
-            if (food) {
-                // Has food, auto-eat will handle it
+            if (foodItem) {
+                // Has food - try to eat it immediately if urgent
+                if (urgentHunger) {
+                    execute(this, agent, async () => {
+                        try {
+                            await bot.equip(foodItem, 'hand');
+                            await bot.consume();
+                            say(agent, `Eating ${foodItem.name} to restore hunger!`);
+                        } catch (e) {
+                            // Auto-eat should handle it
+                        }
+                    });
+                }
                 return;
             }
 
-            // 2. Hunt animals for food (extended range when hungry)
-            const huntable = world.getNearestEntityWhere(bot, entity => mc.isHuntable(entity), 32);
+            // No food in inventory - need to find some
+            // Rate limit hunting attempts to avoid spam
+            const timeSinceLastHunt = Date.now() - this.last_hunt_attempt;
+            if (timeSinceLastHunt < 10000 && !urgentHunger) return;
+
+            // 2. Hunt animals for food (larger range when more hungry)
+            const huntRange = urgentHunger ? 48 : 32;
+            const huntable = world.getNearestEntityWhere(bot, entity => mc.isHuntable(entity), huntRange);
+
             if (huntable && await world.isClearPath(bot, huntable)) {
-                say(agent, `I'm hungry! Hunting ${huntable.name} for food!`);
+                this.last_hunt_attempt = Date.now();
+                say(agent, urgentHunger
+                    ? `URGENT: Starving! Hunting ${huntable.name} for food!`
+                    : `Getting hungry, hunting ${huntable.name}!`);
                 execute(this, agent, async () => {
                     await skills.attackEntity(bot, huntable);
+                    // After killing, try to pick up drops
+                    await new Promise(r => setTimeout(r, 1000));
+                    await skills.pickupNearbyItems(bot);
                 });
                 return;
             }
 
-            // 3. Look for crops
+            // 3. Look for berry bushes (easier to get than crops)
+            const berryBush = world.getNearestBlock(bot, 'sweet_berry_bush', 32);
+            if (berryBush) {
+                this.last_hunt_attempt = Date.now();
+                say(agent, `Found berry bush, harvesting!`);
+                execute(this, agent, async () => {
+                    await skills.goToPosition(bot, berryBush.position.x, berryBush.position.y, berryBush.position.z, 2);
+                });
+                return;
+            }
+
+            // 4. Look for mature crops
             const crops = world.getNearestBlock(bot, 'wheat', 32);
             if (crops) {
-                say(agent, `I'm hungry! Looking for crops!`);
+                this.last_hunt_attempt = Date.now();
+                say(agent, `Found crops, harvesting for food!`);
                 execute(this, agent, async () => {
                     await skills.goToPosition(bot, crops.position.x, crops.position.y, crops.position.z, 2);
                 });
                 return;
             }
 
-            // 4. REAL EMERGENCY - ask for help (but not too often)
-            if (Date.now() - this.last_alert > 30000) { // Only alert every 30 seconds
+            // 5. EMERGENCY - ask for help (but not too often)
+            if (urgentHunger && Date.now() - this.last_alert > 20000) {
                 this.last_alert = Date.now();
-                say(agent, `EMERGENCY: I'm starving and can't find food! Health: ${bot.health.toFixed(1)} Food: ${bot.food}`);
+                say(agent, `EMERGENCY: Starving (food: ${bot.food}/20) and can't find any food sources! Need help!`);
+            } else if (moderateHunger && Date.now() - this.last_alert > 60000) {
+                this.last_alert = Date.now();
+                say(agent, `Getting hungry (food: ${bot.food}/20), looking for food sources...`);
             }
         }
     },
@@ -401,21 +494,54 @@ const modes_list = [
         on: false, // Enabled only for Hugo
         active: false,
         last_patrol: 0,
+        last_survival_warning: 0,
         update: async function (agent) {
             const bot = agent.bot;
 
-            // Actively hunt hostile mobs within larger range
-            const enemy = world.getNearestEntityWhere(bot, entity => mc.isHostile(entity), 24);
-            if (enemy && await world.isClearPath(bot, enemy)) {
-                say(agent, `Hostile detected! Engaging ${enemy.name}!`);
-                execute(this, agent, async () => {
-                    await skills.attackEntity(bot, enemy);
-                });
-                return;
+            // SURVIVAL CHECK: Don't engage in combat or patrol if in survival crisis
+            // This is critical - a guard with 1 HP should NOT be fighting!
+            if (bot.health < 8 || bot.food < 6) {
+                // Only warn occasionally to avoid spam
+                if (Date.now() - this.last_survival_warning > 30000) {
+                    this.last_survival_warning = Date.now();
+                    console.log(`[guard_role] Survival mode - skipping guard duties (Health: ${bot.health.toFixed(1)}, Food: ${bot.food})`);
+                    if (bot.health < 4 || bot.food < 3) {
+                        say(agent, `I'm in critical condition (HP: ${bot.health.toFixed(0)}, Food: ${bot.food}). Can't guard right now!`);
+                    }
+                }
+                return; // Skip guard duties when in survival crisis
             }
 
-            // Patrol around spawn area every 2 minutes
-            if (Date.now() - this.last_patrol > 120000) {
+            // Only engage enemies if we have enough health to survive
+            if (bot.health >= 8) {
+                // Actively hunt hostile mobs within larger range
+                const enemy = world.getNearestEntityWhere(bot, entity => mc.isHostile(entity), 24);
+                if (enemy && await world.isClearPath(bot, enemy)) {
+                    // Check if we have a weapon
+                    const hasWeapon = bot.inventory.items().some(item =>
+                        item.name.includes('sword') || item.name.includes('axe')
+                    );
+
+                    // Only engage with weapon or if health is good
+                    if (hasWeapon || bot.health >= 14) {
+                        say(agent, `Hostile detected! Engaging ${enemy.name}!`);
+                        execute(this, agent, async () => {
+                            await skills.attackEntity(bot, enemy);
+                        });
+                        return;
+                    } else {
+                        // No weapon and not enough health - warn but don't engage
+                        if (Date.now() - this.last_survival_warning > 30000) {
+                            this.last_survival_warning = Date.now();
+                            say(agent, `I see a ${enemy.name} but I need a weapon or more health to engage safely.`);
+                        }
+                        return;
+                    }
+                }
+            }
+
+            // Patrol around spawn area every 2 minutes (only if healthy)
+            if (bot.health >= 10 && bot.food >= 8 && Date.now() - this.last_patrol > 120000) {
                 this.last_patrol = Date.now();
                 say(agent, 'Patrolling the area...');
                 execute(this, agent, async () => {
