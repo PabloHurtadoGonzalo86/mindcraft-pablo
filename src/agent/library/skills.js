@@ -65,11 +65,16 @@ export async function craftRecipe(bot, itemName, num=1) {
             let hasTable = world.getInventoryCounts(bot)['crafting_table'] > 0;
             if (hasTable) {
                 let pos = world.getNearestFreeSpace(bot, 1, 6);
-                await placeBlock(bot, 'crafting_table', pos.x, pos.y, pos.z);
-                craftingTable = world.getNearestBlock(bot, 'crafting_table', craftingTableRange);
+                if (pos) {
+                    await placeBlock(bot, 'crafting_table', pos.x, pos.y, pos.z);
+                    craftingTable = world.getNearestBlock(bot, 'crafting_table', craftingTableRange);
+                }
                 if (craftingTable) {
                     recipes = bot.recipesFor(mc.getItemId(itemName), null, 1, craftingTable);
                     placedTable = true;
+                } else {
+                    log(bot, `Failed to place crafting table for ${itemName}. Try moving to a clearer area.`);
+                    return false;
                 }
             }
             else {
@@ -346,10 +351,8 @@ export async function attackEntity(bot, entity, kill=true) {
 
     if (!kill) {
         if (bot.entity.position.distanceTo(pos) > 5) {
-            console.log('moving to mob...')
             await goToPosition(bot, pos.x, pos.y, pos.z);
         }
-        console.log('attacking mob...')
         await bot.attack(entity);
     }
     else {
@@ -1047,7 +1050,7 @@ export async function giveToPlayer(bot, itemType, username, num=1) {
     if (await discard(bot, itemType, num)) {
         let given = false;
         bot.once('playerCollect', (collector, collected) => {
-            console.log(collected.name);
+            // Item collected event
             if (collector.username === username) {
                 log(bot, `${username} received ${itemType}.`);
                 given = true;
