@@ -975,20 +975,32 @@ export async function viewChest(bot) {
 
 export async function consume(bot, itemName="") {
     /**
-     * Eat/drink the given item.
+     * Eat/drink the given item. If no item specified, tries to find any edible item.
      * @param {MinecraftBot} bot, reference to the minecraft bot.
-     * @param {string} itemName, the item to eat/drink.
+     * @param {string} itemName, the item to eat/drink. If empty, will try any food.
      * @returns {Promise<boolean>} true if the item was eaten, false otherwise.
      * @example
-     * await skills.eat(bot, "apple");
+     * await skills.consume(bot, "apple");
      **/
-    let item, name;
+    let item;
     if (itemName) {
-        item = bot.inventory.items().find(item => item.name === itemName);
-        name = itemName;
+        item = bot.inventory.items().find(i => i.name === itemName);
+    } else {
+        // Try to find any edible item if none specified
+        const edibleItems = [
+            'cooked_beef', 'cooked_porkchop', 'cooked_chicken', 'cooked_mutton',
+            'cooked_cod', 'cooked_salmon', 'cooked_rabbit', 'baked_potato',
+            'bread', 'golden_apple', 'apple', 'carrot', 'melon_slice',
+            'sweet_berries', 'glow_berries', 'beetroot', 'dried_kelp',
+            'cookie', 'pumpkin_pie', 'beef', 'porkchop', 'chicken', 'mutton'
+        ];
+        for (const foodName of edibleItems) {
+            item = bot.inventory.items().find(i => i.name === foodName);
+            if (item) break;
+        }
     }
     if (!item) {
-        log(bot, `You do not have any ${name} to eat.`);
+        log(bot, `No food available to eat${itemName ? ` (wanted ${itemName})` : ''}.`);
         return false;
     }
     await bot.equip(item, 'hand');

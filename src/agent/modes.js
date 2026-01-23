@@ -149,8 +149,8 @@ const modes_list = [
 
             if (!urgentHunger && !moderateHunger) return;
 
-            // 1. Check if has food in inventory
-            const foodItem = bot.inventory.items().find(item =>
+            // 1. Check if has food in inventory (prefer cooked, but allow raw in emergencies)
+            const preferredFood = bot.inventory.items().find(item =>
                 item.name.includes('cooked') ||
                 item.name === 'bread' ||
                 item.name === 'apple' ||
@@ -166,6 +166,20 @@ const modes_list = [
                 item.name === 'cookie' ||
                 item.name === 'pumpkin_pie'
             );
+
+            // In extreme emergency (food < 3), allow raw food as last resort
+            const rawFood = bot.food < 3 ? bot.inventory.items().find(item =>
+                item.name === 'beef' ||
+                item.name === 'porkchop' ||
+                item.name === 'chicken' ||
+                item.name === 'mutton' ||
+                item.name === 'rabbit' ||
+                item.name === 'cod' ||
+                item.name === 'salmon' ||
+                item.name === 'rotten_flesh' // Very last resort
+            ) : null;
+
+            const foodItem = preferredFood || rawFood;
 
             if (foodItem) {
                 // Has food - try to eat it immediately if urgent
@@ -213,17 +227,35 @@ const modes_list = [
                 say(agent, `Found berry bush, harvesting!`);
                 execute(this, agent, async () => {
                     await skills.goToPosition(bot, berryBush.position.x, berryBush.position.y, berryBush.position.z, 2);
+                    // Actually harvest the berries
+                    try {
+                        const bush = bot.blockAt(berryBush.position);
+                        if (bush && bush.name === 'sweet_berry_bush') {
+                            await bot.activateBlock(bush);
+                            await skills.pickupNearbyItems(bot);
+                        }
+                    } catch (e) { /* ignore harvest errors */ }
                 });
                 return;
             }
 
-            // 4. Look for mature crops
-            const crops = world.getNearestBlock(bot, 'wheat', 32);
-            if (crops) {
+            // 4. Look for mature crops (wheat, carrots, potatoes)
+            const cropTypes = ['wheat', 'carrots', 'potatoes', 'beetroots'];
+            let foundCrop = null;
+            for (const cropType of cropTypes) {
+                foundCrop = world.getNearestBlock(bot, cropType, 32);
+                if (foundCrop) break;
+            }
+            if (foundCrop) {
                 this.last_hunt_attempt = Date.now();
-                say(agent, `Found crops, harvesting for food!`);
+                say(agent, `Found ${foundCrop.name}, harvesting for food!`);
                 execute(this, agent, async () => {
-                    await skills.goToPosition(bot, crops.position.x, crops.position.y, crops.position.z, 2);
+                    await skills.goToPosition(bot, foundCrop.position.x, foundCrop.position.y, foundCrop.position.z, 2);
+                    // Actually harvest the crop
+                    try {
+                        await skills.collectBlock(bot, foundCrop.name, 5);
+                        await skills.pickupNearbyItems(bot);
+                    } catch (e) { /* ignore harvest errors */ }
                 });
                 return;
             }
