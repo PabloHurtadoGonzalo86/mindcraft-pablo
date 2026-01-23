@@ -711,14 +711,17 @@ export class CurriculumEngine {
 
     /**
      * Check if bot is in survival crisis (low health or food)
+     * Lowered thresholds to allow more curriculum progress even when hungry
      */
     _checkSurvivalStatus() {
         // Bot needs minimum health and food to continue curriculum
-        if (this.bot.health < 10) {
+        // Only pause for really critical situations
+        if (this.bot.health < 8) {
             console.log(`[Curriculum] Health too low: ${this.bot.health}/20`);
             return false;
         }
-        if (this.bot.food < 8) {
+        // Allow curriculum to continue with moderate hunger (food >= 5)
+        if (this.bot.food < 5) {
             console.log(`[Curriculum] Food too low: ${this.bot.food}/20`);
             return false;
         }
@@ -729,7 +732,7 @@ export class CurriculumEngine {
      * Check if bot is in critical survival emergency
      */
     _isCriticalEmergency() {
-        return this.bot.health < 6 || this.bot.food < 4;
+        return this.bot.health < 5 || this.bot.food < 3;
     }
 
     /**

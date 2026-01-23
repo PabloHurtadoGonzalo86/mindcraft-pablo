@@ -202,26 +202,38 @@ const modes_list = [
             const timeSinceLastHunt = Date.now() - this.last_hunt_attempt;
             if (timeSinceLastHunt < 10000 && !urgentHunger) return;
 
-            // 2. Hunt animals for food (larger range when more hungry)
-            const huntRange = urgentHunger ? 48 : 32;
+            // 2. Hunt animals for food (MUCH larger range - 128 blocks when urgent)
+            const huntRange = urgentHunger ? 128 : 64;
             const huntable = world.getNearestEntityWhere(bot, entity => mc.isHuntable(entity), huntRange);
 
-            if (huntable && await world.isClearPath(bot, huntable)) {
+            if (huntable) {
                 this.last_hunt_attempt = Date.now();
                 say(agent, urgentHunger
                     ? `URGENT: Starving! Hunting ${huntable.name} for food!`
                     : `Getting hungry, hunting ${huntable.name}!`);
                 execute(this, agent, async () => {
-                    await skills.attackEntity(bot, huntable);
+                    // Go to the animal first, then attack
+                    const pos = huntable.position;
+                    await skills.goToPosition(bot, pos.x, pos.y, pos.z, 3);
+                    await skills.attackEntity(bot, huntable, true); // kill=true
                     // After killing, try to pick up drops
-                    await new Promise(r => setTimeout(r, 1000));
+                    await new Promise(r => setTimeout(r, 1500));
                     await skills.pickupNearbyItems(bot);
+                    // Try to eat what we got
+                    const rawMeat = bot.inventory.items().find(i =>
+                        i.name === 'beef' || i.name === 'porkchop' ||
+                        i.name === 'chicken' || i.name === 'mutton'
+                    );
+                    if (rawMeat && bot.food < 6) {
+                        await bot.equip(rawMeat, 'hand');
+                        await bot.consume();
+                    }
                 });
                 return;
             }
 
-            // 3. Look for berry bushes (easier to get than crops)
-            const berryBush = world.getNearestBlock(bot, 'sweet_berry_bush', 32);
+            // 3. Look for berry bushes (larger range - 64 blocks)
+            const berryBush = world.getNearestBlock(bot, 'sweet_berry_bush', 64);
             if (berryBush) {
                 this.last_hunt_attempt = Date.now();
                 say(agent, `Found berry bush, harvesting!`);
@@ -239,11 +251,11 @@ const modes_list = [
                 return;
             }
 
-            // 4. Look for mature crops (wheat, carrots, potatoes)
+            // 4. Look for mature crops (wheat, carrots, potatoes) - larger range 64 blocks
             const cropTypes = ['wheat', 'carrots', 'potatoes', 'beetroots'];
             let foundCrop = null;
             for (const cropType of cropTypes) {
-                foundCrop = world.getNearestBlock(bot, cropType, 32);
+                foundCrop = world.getNearestBlock(bot, cropType, 64);
                 if (foundCrop) break;
             }
             if (foundCrop) {
@@ -260,7 +272,22 @@ const modes_list = [
                 return;
             }
 
-            // 5. EMERGENCY - ask for help (but not too often)
+            // 5. Look for village or any food source in a very large range when desperate
+            if (urgentHunger) {
+                // Try finding apples in leaves
+                const oakLeaves = world.getNearestBlock(bot, 'oak_leaves', 32);
+                if (oakLeaves) {
+                    this.last_hunt_attempt = Date.now();
+                    say(agent, `Breaking oak leaves hoping for apples!`);
+                    execute(this, agent, async () => {
+                        await skills.breakBlockAt(bot, oakLeaves.position.x, oakLeaves.position.y, oakLeaves.position.z);
+                        await skills.pickupNearbyItems(bot);
+                    });
+                    return;
+                }
+            }
+
+            // 6. EMERGENCY - ask for help (but not too often)
             if (urgentHunger && Date.now() - this.last_alert > 20000) {
                 this.last_alert = Date.now();
                 say(agent, `EMERGENCY: Starving (food: ${bot.food}/20) and can't find any food sources! Need help!`);
