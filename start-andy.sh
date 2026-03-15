@@ -19,7 +19,7 @@ export MONGO_PORT="27017"
 export MONGO_USER="mindcraft"
 export MONGO_PASSWORD="mindcraft_user_2026"
 # Embeddings
-export GEMINI_API_KEY="AIzaSyBJroTxr2iN8yXbx_jhPomgKrMGSmTZLwU"
+export GEMINI_API_KEY="[REDACTED]"
 
 # Change to mindcraft directory
 cd /home/pablo/mindcraft-ce
